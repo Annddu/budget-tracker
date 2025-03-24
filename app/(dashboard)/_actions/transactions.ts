@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { CreateTransactionSchema, CreateTransactionSchemaType } from "@/schema/transation";
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 
 export async function CreateTransaction(form: CreateTransactionSchemaType) {
     const parsedBody = CreateTransactionSchema.safeParse(form);
@@ -94,5 +95,8 @@ export async function CreateTransaction(form: CreateTransactionSchemaType) {
                 },
             },
         })
-    ])
+    ]);
+
+    // Invalidate the transactions query to refresh the table
+    revalidatePath("/dashboard");
 }

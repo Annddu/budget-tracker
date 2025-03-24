@@ -31,6 +31,9 @@ function CreateTransactionDialog({ trigger, type }: Props) {
         defaultValues: {
             type: type,
             date: new Date(),
+            description: "", // Add initial empty string
+            amount: 0,      // Add initial zero
+            category: "",
         }
     })
 

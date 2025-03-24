@@ -10,6 +10,8 @@ import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { toast } from 'sonner';
 import { differenceInDays, startOfMonth } from 'date-fns';
 import DatePicker from './_components/DatePicker';
+import Overview from './_components/Overview';
+import History from './_components/History';
 
 async function page() {
   const user = await currentUser();
@@ -34,9 +36,9 @@ async function page() {
 
   return (
     <>
-      <div className='h-full bg-background '>
-        <div className='border-b bg-card flex'>
-          <div className='container flex flex-wrap items-center justify-between gap-6 py-8 px-8'>
+      <div className='block h-full bg-background '>
+        <div className='border-b bg-card flex justify-between'>
+          <div className='flex flex-wrap items-center  py-8 px-8'>
             <p className='text-3xl font-bold'>Hello, {user.firstName}! 👋</p>
           </div>
 
@@ -50,22 +52,26 @@ async function page() {
             />
             <CreateTransactionDialog trigger={
               <Button className='border-rose-500 border-1 bg-rose-950 text-white hover:bg-rose-700 hover:text-white '>
-                Add income
+                Add expense
               </Button>
             }
               type='expense'
             />
           </div>
         </div>
-        
-        <div className='px-8 border-b flex flex-wrap items-center justify-between gap-6 py-8'>
+
+        <Overview userSettings={userSettings} />
+        <History userSettings={userSettings} />
+
+        {/* <div className='px-8 border-b flex flex-wrap items-center justify-between gap-6 py-8'> 
           <div>
             <p className='text-3xl font-bold'>Transactions</p>
           </div>
           <DatePicker />
-        </div>
+        </div>*/}
 
       </div>
+
     </>
   )
 }
