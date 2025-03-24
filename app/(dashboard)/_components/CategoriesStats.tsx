@@ -62,17 +62,20 @@ function CategoriesCard({data, type, formatter}:{
         (acc, el) => acc + (el._sum?.amount || 0),
         0
     );
+    const topCategories = [...filteredData]
+        .sort((a, b) => (b._sum?.amount || 0) - (a._sum?.amount || 0))
+        .slice(0, 3);
 
     return (
         <Card className='h-80 w-full col-span-6'>
             <CardHeader>
                 <CardTitle className='grid grid-flow-row justify-between gap-2 text-muted-foreground md:grid-flow-col'>
-                    {type === "income" ? "Incomes" : "Expenses"} by category
+                    Top 3 {type === "income" ? "Incomes" : "Expenses"} by category
                 </CardTitle>
             </CardHeader>
 
             <div className='flex items-center justify-between gap-2'>
-                {filteredData.length === 0 && (
+                {topCategories.length === 0 && (
                     <div className='flex h-60 w-full flex-col items-center justify-center'>
                         No data for the selected perios
                         <p className='text-sm text-muted-foreground'>
@@ -82,10 +85,10 @@ function CategoriesCard({data, type, formatter}:{
                     </div>
                 )}
 
-                {filteredData.length > 0 && (
+                {topCategories.length > 0 && (
                     <ScrollArea className="h-60 w-full px-4">
                         <div className='flex w-full flex-col gap-4 p-4'>
-                            {filteredData.map((item) => {
+                            {topCategories.map((item) => {
                                 const amount = item._sum.amount || 0;
                                 const percentage = (amount * 100) / (total || amount);
 

@@ -1,10 +1,10 @@
 "use client";
 
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TransactionType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { CreateTransactionSchema, CreateTransactionSchemaType } from "@/schema/transation";
-import { ReactNode, useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -16,28 +16,30 @@ import { format } from "date-fns";
 import { CalendarIcon, Loader2 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CreateTransaction } from "../_actions/transactions";
 import { toast } from "sonner";
 import { DateToUTCDate } from "@/lib/helpers";
 
+// You'll need to create this server action
+import { UpdateTransaction } from "../_actions/updateTransaction";
+
 interface Props {
-    trigger: ReactNode;
-    type: TransactionType;
+    open: boolean;
+    setOpen: (open: boolean) => void;
+    transaction: any; // Update with your transaction type
 }
 
-function CreateTransactionDialog({ trigger, type }: Props) {
+function UpdateTransactionDialog({ open, setOpen, transaction }: Props) {
     const form = useForm<CreateTransactionSchemaType>({
         resolver: zodResolver(CreateTransactionSchema),
         defaultValues: {
-            type: type,
-            date: new Date(),
-            description: "", // Add initial empty string
-            amount: 0,      // Add initial zero
-            category: "",
+            type: transaction.type,
+            date: new Date(transaction.date),
+            description: transaction.description,
+            amount: transaction.amount,
+            category: transaction.category,
         }
-    })
+    });
 
-    const [open, setOpen] = useState(false);
     const handleCategoryChange = useCallback((value: string) => {
         form.setValue("category", value);
     }, [form]);
@@ -45,18 +47,10 @@ function CreateTransactionDialog({ trigger, type }: Props) {
     const queryClient = useQueryClient();
 
     const { mutate, isPending } = useMutation({
-        mutationFn: CreateTransaction,
+        mutationFn: UpdateTransaction,
         onSuccess: () => {
-            toast.success("Transaction created!", {
-                id: "create-transaction",
-            });
-
-            form.reset({
-                type,
-                description: "",
-                amount: 0,
-                date: new Date(),
-                category: undefined,
+            toast.success("Transaction updated!", {
+                id: "update-transaction",
             });
 
             // Invalidate all relevant queries
@@ -70,34 +64,38 @@ function CreateTransactionDialog({ trigger, type }: Props) {
                 queryKey: ["history-data"],
             });
 
-            setOpen((prev) => !prev);
+            // Close the dialog
+            setOpen(false);
         },
+        onError: () => {
+            toast.error("Failed to update transaction", {
+                id: "update-transaction",
+            });
+        }
     });
 
     const onSubmit = useCallback((values: CreateTransactionSchemaType) => {
-        toast.loading("Creating transaction...", {
-            id: "create-transaction"
+        toast.loading("Updating transaction...", {
+            id: "update-transaction"
         });
 
         mutate({
+            id: transaction.id,
             ...values,
             date: DateToUTCDate(values.date),
         });
-    },
-        [mutate]
-    );
+    }, [mutate, transaction.id]);
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>{trigger}</DialogTrigger>
             <DialogContent className="sm:max-w-[455px]">
                 <DialogHeader>
                     <DialogTitle>
-                        Create a new{" "}
+                        Update{" "}
                         <span
                             className={cn(
                                 "m-1",
-                                type === "income" ? "text-emerald-500" : "text-rose-500"
+                                transaction.type === "income" ? "text-emerald-500" : "text-rose-500"
                             )}
                         >transaction</span>
                     </DialogTitle>
@@ -146,14 +144,13 @@ function CreateTransactionDialog({ trigger, type }: Props) {
                                 control={form.control}
                                 name="category"
                                 render={({ field }) => (
-                                    <FormItem>
+                                    <FormItem className="flex flex-col">
                                         <FormLabel>Category</FormLabel>
-                                        <FormControl>
-                                            <CategoryPicker type={type} onChange={handleCategoryChange} />
-                                        </FormControl>
-                                        <FormDescription>
-                                            Select a category for the transaction
-                                        </FormDescription>
+                                        <CategoryPicker 
+                                            value={field.value}
+                                            onChange={handleCategoryChange}
+                                            type={form.getValues("type")}
+                                        />
                                     </FormItem>
                                 )}
                             />
@@ -162,32 +159,35 @@ function CreateTransactionDialog({ trigger, type }: Props) {
                                 control={form.control}
                                 name="date"
                                 render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Transaction date</FormLabel>
+                                    <FormItem className="flex flex-col">
+                                        <FormLabel>Date</FormLabel>
                                         <Popover>
                                             <PopoverTrigger asChild>
                                                 <FormControl>
-                                                    <Button variant={"outline"} className={
-                                                        cn(
-                                                            "w-[200px] pl-3 text-left font-normal",
+                                                    <Button
+                                                        variant={"outline"}
+                                                        className={cn(
+                                                            "w-[240px] pl-3 text-left font-normal",
                                                             !field.value && "text-muted-foreground"
-                                                        )
-                                                    }
+                                                        )}
                                                     >
                                                         {field.value ? (
                                                             format(field.value, "PPP")
                                                         ) : (
                                                             <span>Pick a date</span>
                                                         )}
-                                                        <CalendarIcon className="ml-auto h-3 w-4 opacity-50" />
+                                                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                                                     </Button>
                                                 </FormControl>
                                             </PopoverTrigger>
-                                            <PopoverContent className="w-auto p-0">
+                                            <PopoverContent className="w-auto p-0" align="start">
                                                 <Calendar
                                                     mode="single"
                                                     selected={field.value}
                                                     onSelect={field.onChange}
+                                                    disabled={(date) =>
+                                                        date > new Date() || date < new Date("1900-01-01")
+                                                    }
                                                     initialFocus
                                                 />
                                             </PopoverContent>
@@ -195,7 +195,6 @@ function CreateTransactionDialog({ trigger, type }: Props) {
                                         <FormDescription>
                                             Select a date for the transaction
                                         </FormDescription>
-
                                         <FormMessage />
                                     </FormItem>
                                 )}
@@ -204,28 +203,24 @@ function CreateTransactionDialog({ trigger, type }: Props) {
                     </form>
                 </Form>
                 <DialogFooter>
-                    <DialogClose asChild>
-                        <Button
-                            type='button'
-                            variant={"secondary"}
-                            onClick={() => {
-                                form.reset();
-                            }}
-                        >
-                            Cancel
-                        </Button>
-                    </DialogClose>
+                    <Button
+                        type='button'
+                        variant={"secondary"}
+                        onClick={() => setOpen(false)}
+                    >
+                        Cancel
+                    </Button>
                     <Button
                         type='button'
                         onClick={form.handleSubmit(onSubmit)}
                         disabled={isPending}>
-                        {!isPending && "Create"}
+                        {!isPending && "Update"}
                         {isPending && <Loader2 className='animate-spin' />}
                     </Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
-    )
+    );
 }
 
-export default CreateTransactionDialog;
+export default UpdateTransactionDialog;

@@ -1,12 +1,13 @@
 "use client";
 import { getTransactionsHistoryResponseType } from '@/app/api/transactions-history/route';
 import { DateToUTCDate } from '@/lib/helpers';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useState } from 'react'
 import {
     ColumnDef,
     flexRender,
     getCoreRowModel,
+    getPaginationRowModel,
     getSortedRowModel,
     SortingState,
     useReactTable,
@@ -24,10 +25,11 @@ import { DataTableColumnHeader } from '@/components/datatable/ColumnHeader';
 import { cn } from '@/lib/utils';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { MoreHorizontal } from 'lucide-react';
 import { DropdownMenuContent, DropdownMenuLabel } from '@radix-ui/react-dropdown-menu';
 import { TrashIcon } from '@radix-ui/react-icons';
 import DeleteTransactionDialog from './DeleteTransactionDialog';
+import UpdateTransactionDialog from './UpdateTransactionDialog';
+import { MoreHorizontal, Pencil, Trash } from 'lucide-react';
 
 interface Props {
     from: Date;
@@ -97,9 +99,9 @@ export const columns: ColumnDef<TransactionHistoryRow>[] = [
             <DataTableColumnHeader column={column} title="Amount" />
         ),
         cell: ({ row }) => (
-           <p className="text-md rounded-lg bg-gray-400/5 p-2 text-center font-medium">
-            {row.original.formattedAmount}
-           </p>
+            <p className="text-md rounded-lg bg-gray-400/5 p-2 text-center font-medium">
+                {row.original.formattedAmount}
+            </p>
         )
     },
     {
@@ -111,6 +113,7 @@ export const columns: ColumnDef<TransactionHistoryRow>[] = [
 
 function TransactionTable({ from, to }: Props) {
     const [sorting, setSorting] = useState<SortingState>([]);
+    const queryClient = useQueryClient();
 
     const history = useQuery<getTransactionsHistoryResponseType>({
         queryKey: ["transactions", from, to],
@@ -120,24 +123,44 @@ function TransactionTable({ from, to }: Props) {
                     from
                 )}&to=${DateToUTCDate(to)}`
             ).then((res) => res.json()),
+        // Add this option to improve responsiveness
+        refetchOnWindowFocus: false,
+        staleTime: 1000 * 60 * 5, // 5 minutes
     });
+
+    // Function to manually trigger a refresh
+    const refreshData = () => {
+        history.refetch();
+        queryClient.invalidateQueries({ queryKey: ["overview"] });
+    };
 
     const table = useReactTable({
         data: history.data || emptyData,
         columns,
         getCoreRowModel: getCoreRowModel(),
+        initialState: {
+            pagination: {
+                pageSize: 5
+            }
+        },
         state: {
             sorting,
         },
         onSortingChange: setSorting,
-        getSortedRowModel: getSortedRowModel(), 
+        getSortedRowModel: getSortedRowModel(),
+        getPaginationRowModel: getPaginationRowModel(),
     })
+
 
     return (
         <div className='w-full'>
-            <div className='flex flex-wrap items-end justify-between gap-2 py-4'>TODO</div>
-            
-            
+            <div className='flex flex-wrap items-end justify-between gap-2 py-4'>
+                <Button variant="outline" onClick={refreshData}>
+                    Refresh Data
+                </Button>
+            </div>
+
+
             <SkeletonWrapper isLoading={history.isFetching}>
                 <div className="rounded-md border">
                     <Table>
@@ -183,6 +206,24 @@ function TransactionTable({ from, to }: Props) {
                         </TableBody>
                     </Table>
                 </div>
+                <div className="flex items-center justify-end space-x-2 py-4">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => table.previousPage()}
+                        disabled={!table.getCanPreviousPage()}
+                    >
+                        Previous
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => table.nextPage()}
+                        disabled={!table.getCanNextPage()}
+                    >
+                        Next
+                    </Button>
+                </div>
             </SkeletonWrapper>
         </div>
     )
@@ -190,32 +231,40 @@ function TransactionTable({ from, to }: Props) {
 
 export default TransactionTable
 
-function RowActions({transaction}:{transaction: TransactionHistoryRow}) {
+function RowActions({ transaction }: { transaction: TransactionHistoryRow }) {
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+    
     return (
         <>
             <DeleteTransactionDialog open={showDeleteDialog} setOpen={setShowDeleteDialog} transactionId={transaction.id} />
+            <UpdateTransactionDialog open={showUpdateDialog} setOpen={setShowUpdateDialog} transaction={transaction} />
+            
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Button variant={"ghost"} className='h-8 w-8 p-0'>
                         <span className='sr-only'>Open menu</span>
-                        <MoreHorizontal className='h-4 w-4'/>
+                        <MoreHorizontal className='h-4 w-4' />
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align='end'>
                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
-                        className='flex items-center gap-2'
-                        onSelect={() => {
-                            setShowDeleteDialog(true);
-                        }}
+                        onClick={() => setShowUpdateDialog(true)}
                     >
-                        <TrashIcon className='h-4 w-4 text-muted-foreground'/>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        onClick={() => setShowDeleteDialog(true)}
+                        className="text-red-600"
+                    >
+                        <Trash className="mr-2 h-4 w-4" />
                         Delete
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
         </>
-    )
+    );
 }

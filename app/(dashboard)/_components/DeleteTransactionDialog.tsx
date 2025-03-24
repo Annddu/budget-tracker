@@ -1,6 +1,5 @@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { set } from 'date-fns';
 import React from 'react'
 import { toast } from 'sonner';
 import { DeleteTransaction } from '../_actions/deleteTransaction';
@@ -17,13 +16,22 @@ function DeleteTransactionDialog({open, setOpen, transactionId}:Props) {
     const deleteMutation = useMutation({
       mutationFn: DeleteTransaction,
       onSuccess: async () => {
-        toast.success("Transactios deleted successfully", {
+        toast.success("Transaction deleted successfully", {
           id: transactionId,
         });
     
+        // Invalidate all related queries
         await queryClient.invalidateQueries({
           queryKey: ["transactions"],
         });
+        
+        // Also invalidate history and overview data
+        await queryClient.invalidateQueries({
+          queryKey: ["overview"],
+        });
+        
+        // Close the dialog
+        setOpen(false);
       },
       onError: () => {
         toast.error("Something went wrong", {
@@ -31,6 +39,7 @@ function DeleteTransactionDialog({open, setOpen, transactionId}:Props) {
         });
       }
     });
+    
     return (
         <AlertDialog open={open} onOpenChange={setOpen}>
           <AlertDialogContent>

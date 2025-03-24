@@ -63,12 +63,12 @@ async function page() {
         <Overview userSettings={userSettings} />
         <History userSettings={userSettings} />
 
-        {/* <div className='px-8 border-b flex flex-wrap items-center justify-between gap-6 py-8'> 
+        <div className='px-8 border-b flex flex-wrap items-center justify-between gap-6 py-8'> 
           <div>
             <p className='text-3xl font-bold'>Transactions</p>
           </div>
           <DatePicker />
-        </div>*/}
+        </div>
 
       </div>
 

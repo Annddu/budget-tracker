@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 interface Props {
     type: TransactionType;
     onChange: (value: string) => void;
+    value?: string; // Add this prop    
 }
 
 function CategoryPicker({ type, onChange}: Props) {
