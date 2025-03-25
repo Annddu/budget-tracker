@@ -2,11 +2,13 @@
 import { getTransactionsHistoryResponseType } from '@/app/api/transactions-history/route';
 import { DateToUTCDate } from '@/lib/helpers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import {
     ColumnDef,
+    ColumnFiltersState,
     flexRender,
     getCoreRowModel,
+    getFilteredRowModel,
     getPaginationRowModel,
     getSortedRowModel,
     SortingState,
@@ -30,6 +32,8 @@ import { TrashIcon } from '@radix-ui/react-icons';
 import DeleteTransactionDialog from './DeleteTransactionDialog';
 import UpdateTransactionDialog from './UpdateTransactionDialog';
 import { MoreHorizontal, Pencil, Trash } from 'lucide-react';
+import { DataTableFacetedFilter } from '@/components/datatable/FacetedFilters';
+import { DataTableViewOptions } from '@/components/datatable/ColumnToggle';
 
 interface Props {
     from: Date;
@@ -45,6 +49,9 @@ export const columns: ColumnDef<TransactionHistoryRow>[] = [
         header: ({ column }) => (
             <DataTableColumnHeader column={column} title="Category" />
         ),
+        filterFn: (row, id, value) => {
+            return value.includes(row.getValue(id));
+        },
         cell: ({ row }) => (
             <div className='flex gap-2 capitalize'>
                 {row.original.categoryIcon}
@@ -84,6 +91,9 @@ export const columns: ColumnDef<TransactionHistoryRow>[] = [
         header: ({ column }) => (
             <DataTableColumnHeader column={column} title="Type" />
         ),
+        filterFn: (row, id, value) => {
+            return value.includes(row.getValue(id));
+        },
         cell: ({ row }) => (
             <div className={cn('capitalize rounded-lg text-center p-2',
                 row.original.type === "income" && "bg-emerald-400/10 text-emerald-500",
@@ -113,6 +123,8 @@ export const columns: ColumnDef<TransactionHistoryRow>[] = [
 
 function TransactionTable({ from, to }: Props) {
     const [sorting, setSorting] = useState<SortingState>([]);
+    const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>
+    ([]);
     const queryClient = useQueryClient();
 
     const history = useQuery<getTransactionsHistoryResponseType>({
@@ -145,22 +157,53 @@ function TransactionTable({ from, to }: Props) {
         },
         state: {
             sorting,
+            columnFilters,
         },
         onSortingChange: setSorting,
+        onColumnFiltersChange: setColumnFilters,
         getSortedRowModel: getSortedRowModel(),
         getPaginationRowModel: getPaginationRowModel(),
+        getFilteredRowModel: getFilteredRowModel(),
     })
 
+    const categoriesOptions = useMemo(() => {
+        const categoriesMap = new Map();
+        history.data?.forEach((transaction) => {
+            categoriesMap.set(transaction.category, {
+                value: transaction.category,
+                label: `${transaction.categoryIcon} ${transaction.category}`,
+            });
+        });
+        const uniqueCategories = new Set(categoriesMap.values());
+        return Array.from(uniqueCategories);
+    }, [history.data]);
 
     return (
         <div className='w-full'>
-            <div className='flex flex-wrap items-end justify-between gap-2 py-4'>
-                <Button variant="outline" onClick={refreshData}>
-                    Refresh Data
-                </Button>
+            <div className="flex flex-wrap items-end justify-between gap-2 py-4">
+                <div className="flex gap-2">
+                    {table.getColumn("category") && (
+                        <DataTableFacetedFilter
+                            title="Category"
+                            column={table.getColumn("category")}
+                            options={categoriesOptions}
+                        />
+                    )}
+                    {table.getColumn("type") && (
+                        <DataTableFacetedFilter
+                            title="Type"
+                            column={table.getColumn("type")}
+                            options={[
+                                { label: "Income", value: "income"},
+                                { label: "Expense", value: "expense"},
+                            ]}
+                        />
+                    )}
+                </div>
+                <div className='flex flex-wrap gap-2'>
+                    <DataTableViewOptions table={table} />
+                </div>
             </div>
-
-
             <SkeletonWrapper isLoading={history.isFetching}>
                 <div className="rounded-md border">
                     <Table>
@@ -234,12 +277,12 @@ export default TransactionTable
 function RowActions({ transaction }: { transaction: TransactionHistoryRow }) {
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showUpdateDialog, setShowUpdateDialog] = useState(false);
-    
+
     return (
         <>
             <DeleteTransactionDialog open={showDeleteDialog} setOpen={setShowDeleteDialog} transactionId={transaction.id} />
             <UpdateTransactionDialog open={showUpdateDialog} setOpen={setShowUpdateDialog} transaction={transaction} />
-            
+
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Button variant={"ghost"} className='h-8 w-8 p-0'>

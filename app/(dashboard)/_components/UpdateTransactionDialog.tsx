@@ -48,33 +48,45 @@ function UpdateTransactionDialog({ open, setOpen, transaction }: Props) {
 
     const { mutate, isPending } = useMutation({
         mutationFn: UpdateTransaction,
-        onSuccess: () => {
+        onSuccess: async () => {
             toast.success("Transaction updated!", {
                 id: "update-transaction",
             });
 
-            // Invalidate all relevant queries
-            queryClient.invalidateQueries({
-                queryKey: ["overview"],
-            });
-            queryClient.invalidateQueries({
+            // More comprehensive query invalidation with forced refetching
+            await queryClient.refetchQueries({
                 queryKey: ["transactions"],
             });
-            queryClient.invalidateQueries({
+            
+            await queryClient.refetchQueries({
+                queryKey: ["overview"],
+            });
+            
+            await queryClient.refetchQueries({
                 queryKey: ["history-data"],
             });
-
-            // Close the dialog
+            
+            // Clear the entire cache for maximum reliability
+            await queryClient.invalidateQueries();
+            
+            // Close the dialog after all updates are complete
             setOpen(false);
         },
-        onError: () => {
-            toast.error("Failed to update transaction", {
+        onError: (error) => {
+            console.error("Update error:", error);
+            toast.error(`Failed to update transaction: ${error.message || "Unknown error"}`, {
                 id: "update-transaction",
             });
         }
     });
 
     const onSubmit = useCallback((values: CreateTransactionSchemaType) => {
+        // Check if category is selected
+        if (!values.category) {
+            toast.error("Please select a category");
+            return;
+        }
+
         toast.loading("Updating transaction...", {
             id: "update-transaction"
         });
@@ -88,7 +100,7 @@ function UpdateTransactionDialog({ open, setOpen, transaction }: Props) {
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <DialogContent className="sm:max-w-[455px]">
+            <DialogContent className="sm:max-w-[495px]">
                 <DialogHeader>
                     <DialogTitle>
                         Update{" "}
@@ -145,12 +157,18 @@ function UpdateTransactionDialog({ open, setOpen, transaction }: Props) {
                                 name="category"
                                 render={({ field }) => (
                                     <FormItem className="flex flex-col">
-                                        <FormLabel>Category</FormLabel>
+                                        <FormLabel>Category<span className="text-red-500">*</span></FormLabel>
                                         <CategoryPicker 
                                             value={field.value}
                                             onChange={handleCategoryChange}
                                             type={form.getValues("type")}
                                         />
+                                        {!field.value && (
+                                            <p className="text-sm font-medium text-destructive">
+                                                Category is required
+                                            </p>
+                                        )}
+                                        <FormMessage />
                                     </FormItem>
                                 )}
                             />

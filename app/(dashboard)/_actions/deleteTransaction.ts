@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 
 export async function DeleteTransaction(id: string) {
   const user = await currentUser();
@@ -75,4 +76,10 @@ export async function DeleteTransaction(id: string) {
          }
       }),
   ]);
+  
+  // Add revalidation path
+  revalidatePath("/dashboard");
+  
+  // Return a success object to match the test expectation
+  return { success: true };
 }

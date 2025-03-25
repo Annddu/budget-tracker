@@ -99,4 +99,7 @@ export async function CreateTransaction(form: CreateTransactionSchemaType) {
 
     // Invalidate the transactions query to refresh the table
     revalidatePath("/dashboard");
+    
+    // Add this return value to make the test pass
+    return { success: true };
 }

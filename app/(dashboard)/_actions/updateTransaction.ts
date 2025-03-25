@@ -35,58 +35,52 @@ export async function UpdateTransaction({
     redirect("/sign-in");
   }
 
-  // Get the original transaction to calculate the difference
-  const originalTransaction = await prisma.transation.findFirst({
-    where: {
-      id,
-      userId: user.id,
-    },
-  });
-
-  if (!originalTransaction) {
-    throw new Error("Transaction not found");
-  }
-
-  const categoryRow = await prisma.category.findFirst({
-    where: {
-      userId: user.id,
-      name: category,
-    },
-  });
-
-  if (!categoryRow) {
-    throw new Error("Category not found");
-  }
-
-  // Check if we need to update history records
-  const dateChanged = 
-    originalTransaction.date.getUTCDate() !== date.getUTCDate() ||
-    originalTransaction.date.getUTCMonth() !== date.getUTCMonth() ||
-    originalTransaction.date.getUTCFullYear() !== date.getUTCFullYear();
-  
-  const typeChanged = originalTransaction.type !== type;
-  const amountChanged = originalTransaction.amount !== amount;
-
-  await prisma.$transaction(async (tx) => {
-    // Update the transaction
-    await tx.transation.update({
+  try {
+    // Get the original transaction to calculate the difference
+    const originalTransaction = await prisma.transation.findFirst({
       where: {
         id,
         userId: user.id,
       },
-      data: {
-        amount,
-        date,
-        description: description || "",
-        type,
-        category: categoryRow.name,
-        categoryIcon: categoryRow.icon,
+    });
+
+    if (!originalTransaction) {
+      throw new Error("Transaction not found");
+    }
+
+    const categoryRow = await prisma.category.findFirst({
+      where: {
+        userId: user.id,
+        name: category,
       },
     });
 
-    // If date, type or amount changed, update history records
-    if (dateChanged || typeChanged || amountChanged) {
-      // Remove from old history records
+    if (!categoryRow) {
+      throw new Error("Category not found");
+    }
+
+    // Always perform history updates for maximum reliability
+    // rather than conditional updates based on changes
+
+    // Use transaction to ensure atomic operations
+    const result = await prisma.$transaction(async (tx) => {
+      // First update the transaction 
+      const updatedTransaction = await tx.transation.update({
+        where: {
+          id,
+          userId: user.id,
+        },
+        data: {
+          amount,
+          date,
+          description: description || "",
+          type,
+          category: categoryRow.name,
+          categoryIcon: categoryRow.icon,
+        },
+      });
+
+      // Always remove from the old history records first
       if (originalTransaction.type === "expense") {
         await tx.monthHistory.updateMany({
           where: {
@@ -143,7 +137,7 @@ export async function UpdateTransaction({
         });
       }
 
-      // Add to new history records
+      // Now add to the new history records
       if (type === "expense") {
         await tx.monthHistory.upsert({
           where: {
@@ -237,8 +231,18 @@ export async function UpdateTransaction({
           },
         });
       }
-    }
-  });
+      
+      return updatedTransaction;
+    });
 
-  return { success: true };
+    // Add this to force revalidation on the client
+    return { 
+      success: true,
+      transaction: result,
+      timestamp: new Date().toISOString() // Forces clients to recognize this as fresh data
+    };
+  } catch (error) {
+    console.error("Error updating transaction:", error);
+    throw error;
+  }
 }

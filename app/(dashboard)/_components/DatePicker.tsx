@@ -33,7 +33,7 @@ function DatePicker() {
                 }}
             />
 
-            <div className='container'>
+            <div className='w-full'>
                 <TransactionTable from={dateRange.from} to={dateRange.to}/>
             </div>
         </>
