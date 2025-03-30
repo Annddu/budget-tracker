@@ -34,6 +34,7 @@ import UpdateTransactionDialog from './UpdateTransactionDialog';
 import { MoreHorizontal, Pencil, Trash } from 'lucide-react';
 import { DataTableFacetedFilter } from '@/components/datatable/FacetedFilters';
 import { DataTableViewOptions } from '@/components/datatable/ColumnToggle';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface Props {
     from: Date;
@@ -178,8 +179,75 @@ function TransactionTable({ from, to }: Props) {
         return Array.from(uniqueCategories);
     }, [history.data]);
 
+    // Add these functions in your TransactionTable component:
+    const generateRandomTransactionData = () => {
+        const categories = [
+            { name: "Food", icon: "🍔" },
+            { name: "Transportation", icon: "🚗" },
+            { name: "Entertainment", icon: "🎬" },
+            { name: "Shopping", icon: "🛍️" },
+            { name: "Health", icon: "🏥" },
+            { name: "Education", icon: "📚" },
+            { name: "Salary", icon: "💰" },
+            { name: "Investment", icon: "📈" }
+        ];
+        
+        const transactions = Array.from({ length: 50 }, (_, i) => {
+            const isExpense = Math.random() > 0.3;
+            const categoryIndex = Math.floor(Math.random() * (isExpense ? 6 : 2) + (isExpense ? 0 : 6));
+            const category = categories[Math.min(categoryIndex, categories.length - 1)];
+            const date = new Date();
+            date.setDate(date.getDate() - Math.floor(Math.random() * 30));
+            const amount = Math.floor(Math.random() * (isExpense ? 500 : 5000) + 10);
+            
+            return {
+                id: `demo-${i}`,
+                amount: amount,
+                formattedAmount: isExpense ? `-$${amount}` : `$${amount}`,
+                type: isExpense ? "expense" : "income",
+                category: category.name,
+                categoryIcon: category.icon,
+                description: isExpense 
+                    ? ["Groceries", "Lunch", "Dinner", "Coffee", "Bus ticket", "Movie tickets"][Math.floor(Math.random() * 6)]
+                    : ["Monthly salary", "Freelance work", "Dividend", "Bonus"][Math.floor(Math.random() * 4)],
+                date: date
+            };
+        });
+        
+        // Sort by date, newest first
+        transactions.sort((a, b) => b.date.getTime() - a.date.getTime());
+        
+        // Update the query data directly
+        queryClient.setQueryData(["transactions", from, to], transactions);
+    };
+
+    const restoreTransactionData = () => {
+        // Invalidate the query to trigger a refetch
+        queryClient.invalidateQueries({
+            queryKey: ["transactions", from, to]
+        });
+    };
+
     return (
         <div className='w-full'>
+            <div className="flex justify-end mb-4">
+                <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={generateRandomTransactionData}
+                    className="mr-2"
+                >
+                    Generate Test Data
+                </Button>
+                
+                <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={restoreTransactionData}
+                >
+                    Restore Data
+                </Button>
+            </div>
             <div className="flex flex-wrap items-end justify-between gap-2 py-4">
                 <div className="flex gap-2">
                     {table.getColumn("category") && (
@@ -250,22 +318,45 @@ function TransactionTable({ from, to }: Props) {
                     </Table>
                 </div>
                 <div className="flex items-center justify-end space-x-2 py-4">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => table.previousPage()}
-                        disabled={!table.getCanPreviousPage()}
-                    >
-                        Previous
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => table.nextPage()}
-                        disabled={!table.getCanNextPage()}
-                    >
-                        Next
-                    </Button>
+                    <div className="flex-1 text-sm text-muted-foreground">
+                        Showing {table.getRowModel().rows.length} of{" "}
+                        {history.data?.length || 0} entries
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Select
+                            value={`${table.getState().pagination.pageSize}`}
+                            onValueChange={(value) => {
+                                table.setPageSize(Number(value))
+                            }}
+                        >
+                            <SelectTrigger className="h-8 w-[70px]">
+                                <SelectValue placeholder={table.getState().pagination.pageSize} />
+                            </SelectTrigger>
+                            <SelectContent side="top">
+                                {[5, 10, 20, 30, 50].map((pageSize) => (
+                                    <SelectItem key={pageSize} value={`${pageSize}`}>
+                                        {pageSize}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => table.previousPage()}
+                            disabled={!table.getCanPreviousPage()}
+                        >
+                            Previous
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => table.nextPage()}
+                            disabled={!table.getCanNextPage()}
+                        >
+                            Next
+                        </Button>
+                    </div>
                 </div>
             </SkeletonWrapper>
         </div>

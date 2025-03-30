@@ -1,4 +1,3 @@
-
 import { Button } from '@/components/ui/button';
 import { prisma } from '@/lib/prisma';
 import { currentUser } from '@clerk/nextjs/server'
@@ -12,6 +11,7 @@ import { differenceInDays, startOfMonth } from 'date-fns';
 import DatePicker from './_components/DatePicker';
 import Overview from './_components/Overview';
 import History from './_components/History';
+import { DemoModeToggle } from "./_components/DemoModeToggle";
 
 async function page() {
   const user = await currentUser();
@@ -28,11 +28,6 @@ async function page() {
   if (!userSettings) {
     redirect("/wizard");
   }
-
-  // const [dateRange, setDateRange] = React.useState<{ from: Date, to: Date }>({
-  //   from: startOfMonth(new Date()),
-  //   to: new Date()
-  // })
 
   return (
     <>
@@ -69,6 +64,11 @@ async function page() {
           </div>
           <DatePicker />
         </div>
+
+        {/* <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <DemoModeToggle />
+        </div> */}
 
       </div>
 

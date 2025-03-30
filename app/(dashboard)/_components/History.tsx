@@ -7,7 +7,7 @@ import { Period, Timeframe } from '@/lib/types';
 import { UserSettings } from '@prisma/client';
 import React, { useCallback, useMemo, useState } from 'react'
 import HistoryPeriodSelector from './HistoryPeriodSelector';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import SkeletonWrapper from '@/components/SkeletonWrapper';
 import {
     Bar,
@@ -20,6 +20,7 @@ import {
 } from "recharts"
 import CountUp from 'react-countup';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 function History({ userSettings }: { userSettings: UserSettings }) {
     const [timeframe, setTimeframe] = useState<Timeframe>("month");
@@ -32,6 +33,51 @@ function History({ userSettings }: { userSettings: UserSettings }) {
         return GetFormatterForCurrency(userSettings.currency);
     }, [userSettings.currency]);
 
+    const queryClient = useQueryClient();
+
+    // Function to generate random data based on the current timeframe
+    const generateRandomData = () => {
+        const randomData = [];
+
+        if (timeframe === "month") {
+            // Generate daily data for the current month
+            const daysInMonth = new Date(period.year, period.month + 1, 0).getDate();
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                randomData.push({
+                    year: period.year,
+                    month: period.month,
+                    day: day,
+                    income: Math.random() * 5000,
+                    expense: Math.random() * 3000
+                });
+            }
+        } else {
+            // Generate monthly data for the current year
+            for (let month = 0; month < 12; month++) {
+                randomData.push({
+                    year: period.year,
+                    month: month,
+                    income: Math.random() * 15000,
+                    expense: Math.random() * 10000
+                });
+            }
+        }
+
+        // Update the query data directly
+        queryClient.setQueryData(
+            ["overview", "history", timeframe, period],
+            randomData
+        );
+    };
+
+    // Add this function to restore original data
+    const restoreOriginalData = () => {
+        // Invalidate the queries to trigger a refetch from the server
+        queryClient.invalidateQueries({
+            queryKey: ["overview", "history", timeframe, period]
+        });
+    };
 
     const historyDataQuery = useQuery({
         queryKey: ["overview", "history", timeframe, period],
@@ -46,7 +92,6 @@ function History({ userSettings }: { userSettings: UserSettings }) {
 
     return (
         <div className='px-8'>
-            <h2 className='mt-12 text-3xl font-bold py-4'>Statistics</h2>
             <Card className='col-span-12 mt-2 w-full'>
                 <CardHeader className='gap-2'>
                     <CardTitle className='grid grid-flow-row justify-between gap-2 md:grid-flow-col'>
@@ -62,9 +107,7 @@ function History({ userSettings }: { userSettings: UserSettings }) {
                                 variant={"outline"}
                                 className='flex items-center gap-2 text-sm'
                             >
-                                <div className='h-4 w-4 rounded-full bg-emerald-500'>
-
-                                </div>
+                                <div className='h-4 w-4 rounded-full bg-emerald-500'></div>
                                 Income
                             </Badge>
 
@@ -72,11 +115,27 @@ function History({ userSettings }: { userSettings: UserSettings }) {
                                 variant={"outline"}
                                 className='flex items-center gap-2 text-sm'
                             >
-                                <div className='h-4 w-4 rounded-full bg-red-500'>
-
-                                </div>
+                                <div className='h-4 w-4 rounded-full bg-red-500'></div>
                                 Expense
                             </Badge>
+                            
+                            <div className="flex gap-2 ml-2">
+                                <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    onClick={generateRandomData}
+                                >
+                                    Generate Test Data
+                                </Button>
+                                
+                                <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    onClick={restoreOriginalData}
+                                >
+                                    Restore Data
+                                </Button>
+                            </div>
                         </div>
                     </CardTitle>
                 </CardHeader>
