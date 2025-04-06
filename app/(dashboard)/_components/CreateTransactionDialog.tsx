@@ -16,9 +16,11 @@ import { format } from "date-fns";
 import { CalendarIcon, Loader2 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CreateTransaction } from "../_actions/transactions";
+// Remove import for server action
+// import { CreateTransaction } from "../_actions/transactions";
 import { toast } from "sonner";
 import { DateToUTCDate } from "@/lib/helpers";
+import { useUser } from "@clerk/nextjs"; // Add this import to get the current user
 
 interface Props {
     trigger: ReactNode;
@@ -26,13 +28,16 @@ interface Props {
 }
 
 function CreateTransactionDialog({ trigger, type }: Props) {
+    const { user } = useUser(); // Get current user from Clerk
+    const userId = user?.id;
+    
     const form = useForm<CreateTransactionSchemaType>({
         resolver: zodResolver(CreateTransactionSchema),
         defaultValues: {
             type: type,
             date: new Date(),
-            description: "", // Add initial empty string
-            amount: 0,      // Add initial zero
+            description: "",
+            amount: 0,
             category: "",
         }
     })
@@ -44,8 +49,27 @@ function CreateTransactionDialog({ trigger, type }: Props) {
 
     const queryClient = useQueryClient();
 
+    // Replace server action with API call
     const { mutate, isPending } = useMutation({
-        mutationFn: CreateTransaction,
+        mutationFn: async (values: CreateTransactionSchemaType) => {
+            // Use fetch to call the API endpoint
+            const response = await fetch(`/api/transactions?userId=${userId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // Use API key when calling from an external frontend
+                    // 'Authorization': 'Bearer your-secure-api-key'
+                },
+                body: JSON.stringify(values)
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Failed to create transaction");
+            }
+            
+            return response.json();
+        },
         onSuccess: () => {
             toast.success("Transaction created!", {
                 id: "create-transaction",
@@ -72,9 +96,19 @@ function CreateTransactionDialog({ trigger, type }: Props) {
 
             setOpen((prev) => !prev);
         },
+        onError: (error) => {
+            toast.error(`Failed to create transaction: ${error.message}`, {
+                id: "create-transaction"
+            });
+        }
     });
 
     const onSubmit = useCallback((values: CreateTransactionSchemaType) => {
+        if (!userId) {
+            toast.error("User not authenticated");
+            return;
+        }
+        
         toast.loading("Creating transaction...", {
             id: "create-transaction"
         });
@@ -83,9 +117,7 @@ function CreateTransactionDialog({ trigger, type }: Props) {
             ...values,
             date: DateToUTCDate(values.date),
         });
-    },
-        [mutate]
-    );
+    }, [mutate, userId]);
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>

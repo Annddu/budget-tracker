@@ -5,11 +5,31 @@ import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
 export async function GET(request: Request) {
-    const user = await currentUser();
-    if(!user) {
-        redirect("/sign-in");
+    // Get user from Clerk or via API key
+    let userId: string | null = null;
+    
+    // Check for API key auth first
+    const authHeader = request.headers.get('authorization');
+    const API_KEY = process.env.API_KEY || 'your-secure-api-key';
+    
+    if (authHeader === `Bearer ${API_KEY}`) {
+        // For API key auth, get userId from query param
+        const { searchParams } = new URL(request.url);
+        userId = searchParams.get('userId');
+        
+        if (!userId) {
+            return Response.json({ error: "userId is required for API key authentication" }, { status: 400 });
+        }
+    } else {
+        // Use normal Clerk auth
+        const user = await currentUser();
+        if (!user) {
+            redirect("/sign-in");
+        }
+        userId = user.id;
     }
 
+    // Rest of your existing code, using userId
     const { searchParams } = new URL(request.url);
     const from = searchParams.get("from");
     const to = searchParams.get("to");
@@ -27,7 +47,7 @@ export async function GET(request: Request) {
     }
 
     const tranasctios = await getTransactionsHistory(
-        user.id,
+        userId,
         queryParams.data.from,
         queryParams.data.to
     );

@@ -16,7 +16,6 @@ import { useForm } from 'react-hook-form';
 import Picker from '@emoji-mart/react';
 import data from "@emoji-mart/data";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CreateCategory } from '../_actions/categories';
 import { Category } from '@prisma/client';
 import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
@@ -40,7 +39,33 @@ function CreateCategoryDialog({ type }: Props) {
     const theme = useTheme();
 
     const {mutate, isPending} = useMutation({
-        mutationFn: CreateCategory,
+        mutationFn: async (values: CreateCategorySchemaType) => {
+            // For Clerk authenticated version:
+            const response = await fetch('/api/categories', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(values)
+            });
+            
+            // For API key version (in your separated frontend):
+            // const response = await fetch(`http://localhost:3000/api/categories?userId=${userId}`, {
+            //   method: 'POST',
+            //   headers: {
+            //     'Content-Type': 'application/json',
+            //     'Authorization': `Bearer your-secure-api-key`
+            //   },
+            //   body: JSON.stringify(values)
+            // });
+            
+            if (!response.ok) {
+              const error = await response.json();
+              throw new Error(error.message || 'Failed to create category');
+            }
+            
+            return response.json();
+          },
         onSuccess: async (data: Category) => {
             form.reset({
                 name: "",

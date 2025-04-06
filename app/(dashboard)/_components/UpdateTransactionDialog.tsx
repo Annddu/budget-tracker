@@ -18,9 +18,12 @@ import { Calendar } from "@/components/ui/calendar";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { DateToUTCDate } from "@/lib/helpers";
+import { useUser } from "@clerk/nextjs"; // Add this import to get the current user
 
-// You'll need to create this server action
-import { UpdateTransaction } from "../_actions/updateTransaction";
+// Define the type that was previously in your server action
+type UpdateTransactionParams = CreateTransactionSchemaType & {
+  id: string;
+};
 
 interface Props {
     open: boolean;
@@ -29,6 +32,8 @@ interface Props {
 }
 
 function UpdateTransactionDialog({ open, setOpen, transaction }: Props) {
+    const { user } = useUser(); // Add this to get the current user
+    
     const form = useForm<CreateTransactionSchemaType>({
         resolver: zodResolver(CreateTransactionSchema),
         defaultValues: {
@@ -46,8 +51,26 @@ function UpdateTransactionDialog({ open, setOpen, transaction }: Props) {
 
     const queryClient = useQueryClient();
 
+    // Update the mutation function to use the API
     const { mutate, isPending } = useMutation({
-        mutationFn: UpdateTransaction,
+        mutationFn: async (values: UpdateTransactionParams) => {
+            const response = await fetch(`/api/transactions?userId=${user?.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // For external frontend: 'Authorization': 'Bearer your-secure-api-key'
+                },
+                body: JSON.stringify(values)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Failed to update transaction");
+            }
+
+            return response.json();
+        },
+        // Rest of your mutation configuration remains the same
         onSuccess: async () => {
             toast.success("Transaction updated!", {
                 id: "update-transaction",
@@ -57,25 +80,24 @@ function UpdateTransactionDialog({ open, setOpen, transaction }: Props) {
             await queryClient.refetchQueries({
                 queryKey: ["transactions"],
             });
-            
+
             await queryClient.refetchQueries({
                 queryKey: ["overview"],
             });
-            
+
             await queryClient.refetchQueries({
                 queryKey: ["history-data"],
             });
-            
+
             // Clear the entire cache for maximum reliability
             await queryClient.invalidateQueries();
-            
+
             // Close the dialog after all updates are complete
             setOpen(false);
         },
         onError: (error) => {
-            console.error("Update error:", error);
-            toast.error(`Failed to update transaction: ${error.message || "Unknown error"}`, {
-                id: "update-transaction",
+            toast.error(`Failed to update transaction: ${error.message}`, {
+                id: "update-transaction"
             });
         }
     });
