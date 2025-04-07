@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { GetFormatterForCurrency } from '@/lib/helpers';
 import { Period, Timeframe } from '@/lib/types';
 import { UserSettings } from '@prisma/client';
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useState, useEffect } from 'react'
 import HistoryPeriodSelector from './HistoryPeriodSelector';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import SkeletonWrapper from '@/components/SkeletonWrapper';
@@ -79,6 +79,16 @@ function History({ userSettings }: { userSettings: UserSettings }) {
         });
     };
 
+    useEffect(() => {
+        // Store current state for other components to know what's displayed
+        sessionStorage.setItem('historyState', JSON.stringify({ timeframe, period }));
+        
+        return () => {
+            // Cleanup on unmount
+            sessionStorage.removeItem('historyState');
+        };
+    }, [timeframe, period]);
+
     const historyDataQuery = useQuery({
         queryKey: ["overview", "history", timeframe, period],
         queryFn: () =>
@@ -92,9 +102,9 @@ function History({ userSettings }: { userSettings: UserSettings }) {
 
     return (
         <div className='px-8'>
-            <Card className='col-span-12 mt-2 w-full'>
+            <Card className='col-span-12 mt-2 w-full transition-all duration-300 ease-in-out'>
                 <CardHeader className='gap-2'>
-                    <CardTitle className='grid grid-flow-row justify-between gap-2 md:grid-flow-col'>
+                    <CardTitle className='grid grid-flow-row justify-between gap-2 md:grid-flow-col transition-colors duration-200'>
                         <HistoryPeriodSelector
                             period={period}
                             setPeriod={setPeriod}
@@ -119,7 +129,7 @@ function History({ userSettings }: { userSettings: UserSettings }) {
                                 Expense
                             </Badge>
                             
-                            <div className="flex gap-2 ml-2">
+                            {/* <div className="flex gap-2 ml-2">
                                 <Button 
                                     variant="outline" 
                                     size="sm" 
@@ -135,89 +145,91 @@ function History({ userSettings }: { userSettings: UserSettings }) {
                                 >
                                     Restore Data
                                 </Button>
-                            </div>
+                            </div> */}
                         </div>
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <SkeletonWrapper isLoading={historyDataQuery.isFetching}>
-                        {dataAvailable && (
-                            <ResponsiveContainer width={"100%"} height={300}>
-                                <BarChart
-                                    height={300}
-                                    data={historyDataQuery.data}
-                                    barCategoryGap={5}
-                                >
-                                    <defs>
-                                        <linearGradient id="incomeBar" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset={"0"} stopColor="#10b981" stopOpacity={"1"} />
-                                            <stop offset={"1"} stopColor="#10b981" stopOpacity={"0"} />
-                                        </linearGradient>
+                    <div className="transition-opacity duration-300 ease-in-out">
+                        <SkeletonWrapper isLoading={historyDataQuery.isFetching}>
+                            {dataAvailable && (
+                                <ResponsiveContainer width={"100%"} height={300}>
+                                    <BarChart
+                                        height={300}
+                                        data={historyDataQuery.data}
+                                        barCategoryGap={5}
+                                    >
+                                        <defs>
+                                            <linearGradient id="incomeBar" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset={"0"} stopColor="#10b981" stopOpacity={"1"} />
+                                                <stop offset={"1"} stopColor="#10b981" stopOpacity={"0"} />
+                                            </linearGradient>
 
-                                        <linearGradient id="expenseBar" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset={"0"} stopColor="#ef4444" stopOpacity={"1"} />
-                                            <stop offset={"1"} stopColor="#ef4444" stopOpacity={"0"} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid
-                                        strokeDasharray="5 5"
-                                        strokeOpacity={"0.2"}
-                                        vertical={false}
-                                    />
-                                    <XAxis
-                                        stroke="#888888"
-                                        fontSize={12}
-                                        tickLine={false}
-                                        axisLine={false}
-                                        padding={{ left: 5, right: 5 }}
-                                        dataKey={(data) => {
-                                            const { year, month, day } = data;
-                                            const date = new Date(year, month, day || 1);
-                                            if (timeframe === "year") {
+                                            <linearGradient id="expenseBar" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset={"0"} stopColor="#ef4444" stopOpacity={"1"} />
+                                                <stop offset={"1"} stopColor="#ef4444" stopOpacity={"0"} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid
+                                            strokeDasharray="5 5"
+                                            strokeOpacity={"0.2"}
+                                            vertical={false}
+                                        />
+                                        <XAxis
+                                            stroke="#888888"
+                                            fontSize={12}
+                                            tickLine={false}
+                                            axisLine={false}
+                                            padding={{ left: 5, right: 5 }}
+                                            dataKey={(data) => {
+                                                const { year, month, day } = data;
+                                                const date = new Date(year, month, day || 1);
+                                                if (timeframe === "year") {
+                                                    return date.toLocaleDateString("default", {
+                                                        month: "long",
+                                                    });
+                                                }
                                                 return date.toLocaleDateString("default", {
-                                                    month: "long",
+                                                    day: "2-digit",
                                                 });
-                                            }
-                                            return date.toLocaleDateString("default", {
-                                                day: "2-digit",
-                                            });
-                                        }}
-                                    />
-                                    <YAxis
-                                        stroke="#888888"
-                                        fontSize={12}
-                                        tickLine={false}
-                                        axisLine={false}
-                                    />
-                                    <Bar
-                                        dataKey={"income"}
-                                        label="Income"
-                                        fill="url(#incomeBar)"
-                                        radius={4}
-                                        className="cursor-pointer"
-                                    />
-                                    <Bar
-                                        dataKey={"expense"}
-                                        label="Expense"
-                                        fill="url(#expenseBar)"
-                                        radius={4}
-                                        className="cursor-pointer"
-                                    />
-                                    <Tooltip cursor={{ opacity: 0.1 }} content={props => (
-                                        <CustomTooltip formatter={formatter} {...props} />
-                                    )} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        )}
-                        {!dataAvailable && (
-                            <Card className="flex h-[300px] flex-col items-center justify-center bg-background">
-                                No data for the selected period
-                                <p className="text-sm text-muted-foreground">
-                                    Try selecting a different period or adding new transactions
-                                </p>
-                            </Card>
-                        )}
-                    </SkeletonWrapper>
+                                            }}
+                                        />
+                                        <YAxis
+                                            stroke="#888888"
+                                            fontSize={12}
+                                            tickLine={false}
+                                            axisLine={false}
+                                        />
+                                        <Bar
+                                            dataKey={"income"}
+                                            label="Income"
+                                            fill="url(#incomeBar)"
+                                            radius={4}
+                                            className="cursor-pointer"
+                                        />
+                                        <Bar
+                                            dataKey={"expense"}
+                                            label="Expense"
+                                            fill="url(#expenseBar)"
+                                            radius={4}
+                                            className="cursor-pointer"
+                                        />
+                                        <Tooltip cursor={{ opacity: 0.1 }} content={props => (
+                                            <CustomTooltip formatter={formatter} {...props} />
+                                        )} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            )}
+                            {!dataAvailable && (
+                                <Card className="flex h-[300px] flex-col items-center justify-center bg-background">
+                                    No data for the selected period
+                                    <p className="text-sm text-muted-foreground">
+                                        Try selecting a different period or adding new transactions
+                                    </p>
+                                </Card>
+                            )}
+                        </SkeletonWrapper>
+                    </div>
                 </CardContent>
             </Card>
         </div>

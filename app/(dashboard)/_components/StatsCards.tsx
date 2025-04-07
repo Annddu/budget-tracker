@@ -98,21 +98,26 @@ function StatCard({
         [formatter]
     );
 
+    // Add key prop to force re-render when value changes
+    // This ensures proper animation
     return (
-        <Card className="flex w-full items-center gap-2 p-4">
-            {icon}
+        <Card className="flex w-full items-center gap-2 p-4 transition-all duration-300 ease-in-out hover:shadow-md">
+            <div className="transition-all duration-300 ease-in-out">
+                {icon}
+            </div>
             <div className='flex flex-col items-start gap-0'>
-                <p className='text-muted-foreground'>{title}</p>
+                <p className='text-muted-foreground transition-colors duration-200'>{title}</p>
                 <CountUp
-                    preserveValue
-                    redraw={false}
+                    key={`${title}-${value}-${Date.now()}`} // Add timestamp to force rerender
+                    start={value * 0.7}  // Start from 70% of the final value 
+                    preserveValue={false} 
                     end={value}
                     decimals={2}
                     formattingFn={formatFn}
-                    className='text-2xl'
+                    duration={1.5}
+                    className='text-2xl transition-all duration-300 ease-in-out'
                 />
             </div>
         </Card>
-        
     )
 }

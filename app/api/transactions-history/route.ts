@@ -29,10 +29,12 @@ export async function GET(request: Request) {
         userId = user.id;
     }
 
-    // Rest of your existing code, using userId
     const { searchParams } = new URL(request.url);
-    const from = searchParams.get("from");
-    const to = searchParams.get("to");
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+    const skip = (page - 1) * limit;
 
     const queryParams = OverviewQuerySchema.safeParse({
         from,
@@ -43,16 +45,74 @@ export async function GET(request: Request) {
         return Response.json(queryParams.error.message, {
             status: 400,
         });
-    
     }
 
-    const tranasctios = await getTransactionsHistory(
-        userId,
-        queryParams.data.from,
-        queryParams.data.to
-    );
+    // Get user settings for currency formatting
+    const userSettings = await prisma.userSettings.findUnique({
+        where: {
+            userId,
+        },
+    });
 
-    return Response.json(tranasctios);
+    if (!userSettings) {
+        return Response.json({ error: "User settings not found" }, { status: 404 });
+    }
+
+    try {
+        // Use the validated dates from queryParams instead of raw values
+        const fromDate = queryParams.data.from;
+        const toDate = queryParams.data.to;
+        
+        // Get total count for pagination metadata
+        const totalCount = await prisma.transation.count({
+            where: {
+                userId,
+                date: {
+                    gte: fromDate,
+                    lte: toDate
+                }
+            }
+        });
+        
+        // Get paginated transactions
+        const transactions = await prisma.transation.findMany({
+            where: {
+                userId,
+                date: {
+                    gte: fromDate,
+                    lte: toDate
+                }
+            },
+            orderBy: { date: "desc" },
+            skip: skip,
+            take: limit
+        });
+        
+        // Format transaction amounts
+        const formatter = GetFormatterForCurrency(userSettings.currency);
+        
+        const formattedTransactions = transactions.map((t) => ({
+            ...t,
+            formattedAmount:
+                t.type === "expense"
+                    ? `-${formatter.format(t.amount)}`
+                    : formatter.format(t.amount),
+        }));
+        
+        // Return data with pagination metadata
+        return Response.json({
+            data: formattedTransactions,
+            pagination: {
+                total: totalCount,
+                pages: Math.ceil(totalCount / limit),
+                page: page,
+                limit: limit
+            }
+        });
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+        return Response.json({ error: errorMessage }, { status: 500 });
+    }
 }
 
 export type getTransactionsHistoryResponseType = Awaited<

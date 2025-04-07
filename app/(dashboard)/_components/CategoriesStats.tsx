@@ -67,7 +67,8 @@ function CategoriesCard({data, type, formatter}:{
         .slice(0, 3);
 
     return (
-        <Card className='h-80 w-full col-span-6'>
+        <Card className='h-80 w-full col-span-6 transition-all duration-300 ease-in-out' 
+              key={`card-${type}-${total}-${Date.now()}`}>  {/* Add this key */}
             <CardHeader>
                 <CardTitle className='grid grid-flow-row justify-between gap-2 text-muted-foreground md:grid-flow-col'>
                     Top 3 {type === "income" ? "Incomes" : "Expenses"} by category
@@ -109,6 +110,7 @@ function CategoriesCard({data, type, formatter}:{
 
                                         <Progress
                                             value={percentage}
+                                            className="h-2 w-full transition-all duration-300 ease-in-out"
                                             indicator={
                                                 type === "income" ? "bg-emerald-500" :
                                                 "bg-red-500"

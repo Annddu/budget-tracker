@@ -63,3 +63,22 @@ model YearHistory {
 
   @@id([month, year, userId])
 }
+
+// Add this model to your existing schema
+
+model FileUpload {
+  id          String   @id @default(cuid())
+  userId      String
+  fileName    String
+  originalName String
+  fileSize    BigInt
+  fileType    String
+  filePath    String  // Path on local filesystem
+  uploadedAt  DateTime @default(now())
+  category    String   @default("general")
+  description String?
+  isComplete  Boolean  @default(false)
+  chunks      Int      @default(0)
+  totalChunks Int      @default(0)
+  downloadCount Int    @default(0)
+}
