@@ -12,6 +12,7 @@ import DatePicker from './_components/DatePicker';
 import Overview from './_components/Overview';
 import History from './_components/History';
 import { DemoModeToggle } from "./_components/DemoModeToggle";
+import FilesPage from './files/page';
 
 async function page() {
   const user = await currentUser();
@@ -54,6 +55,8 @@ async function page() {
             />
           </div>
         </div>
+
+        <FilesPage/>
 
         <Overview userSettings={userSettings} />
         <History userSettings={userSettings} />

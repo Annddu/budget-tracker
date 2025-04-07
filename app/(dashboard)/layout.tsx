@@ -1,16 +1,21 @@
 import Navbar from '@/components/Navbar'
 import React, { ReactNode } from 'react'
 import { DemoProvider } from '../context/DemoContext'
+import { FileUploadProvider } from './_context/FileUploadContext';
 
-function layout({children} : {children: ReactNode}) {
+export default async function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <DemoProvider>
-      <div className='relative flex h-screen w-full flex-col'>
+      <FileUploadProvider>
+        <div className='relative flex h-screen w-full flex-col'>
           <Navbar />
           <div className='w-full'>{children}</div>
-      </div>
+        </div>
+      </FileUploadProvider>
     </DemoProvider>
-  )
+  );
 }
-
-export default layout

@@ -140,6 +140,8 @@ function TransactionTable({ from, to }: Props) {
     const { ref, inView } = useInView();
     const { refreshAllData } = useDataRefresh();
 
+    const ITEMS_PER_PAGE = 25; // Set a larger page size for better performance
+
     // Change to useInfiniteQuery for pagination support
     const {
         data,
@@ -168,6 +170,7 @@ function TransactionTable({ from, to }: Props) {
         // Add these options to improve responsiveness
         refetchOnWindowFocus: false,
         staleTime: 1000 * 60 * 5, // 5 minutes
+        gcTime: 1000 * 60 * 10,   // 10 minutes cache time
     });
 
     // Function to manually trigger a refresh
@@ -542,7 +545,7 @@ function TransactionTable({ from, to }: Props) {
         const monthlyPeriod = { month: transactionMonth, year: transactionYear };
         queryClient.setQueryData(
             ["overview", "history", "month", monthlyPeriod],
-            (oldData) => {
+            (oldData: any) => {
                 if (!oldData || !Array.isArray(oldData)) return oldData;
 
                 const updatedData = [...oldData];
@@ -580,7 +583,7 @@ function TransactionTable({ from, to }: Props) {
         const yearlyPeriod = { year: transactionYear };
         queryClient.setQueryData(
             ["overview", "history", "year", yearlyPeriod],
-            (oldData) => {
+            (oldData: any) => {
                 if (!oldData || !Array.isArray(oldData)) return oldData;
 
                 const updatedData = [...oldData];
@@ -621,6 +624,46 @@ function TransactionTable({ from, to }: Props) {
             fetchNextPage();
         }
     }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+    useEffect(() => {
+        if (!hasNextPage || isFetchingNextPage) return;
+
+        const handleScroll = () => {
+            const scrollPosition = window.scrollY;
+            const windowHeight = window.innerHeight;
+            const documentHeight = document.documentElement.scrollHeight;
+
+            // If user has scrolled 70% down the page, prefetch next page
+            if (scrollPosition > 0 && (scrollPosition + windowHeight) / documentHeight > 0.5) {
+                console.log("Prefetching next page of transactions");
+                fetchNextPage();
+            }
+        };
+
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+    // Add this memoized rows to improve performance
+    const memoizedRows = useMemo(() => {
+        return table.getRowModel().rows.map((row) => {
+            const isNewTransaction = newTransactions.some(t => t.id === row.original.id);
+
+            return (
+                <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                    className={`${isNewTransaction ? "animate-in slide-in-from-top-2 duration-300" : ""}`}
+                >
+                    {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className="transition-colors duration-200">
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                    ))}
+                </TableRow>
+            );
+        });
+    }, [table.getRowModel().rows, newTransactions]);
 
     return (
         <div className='w-full'>
@@ -693,36 +736,18 @@ function TransactionTable({ from, to }: Props) {
                         <TableBody>
                             {table.getRowModel().rows?.length ? (
                                 <>
-                                    {table.getRowModel().rows.map((row) => {
-                                        // Check if this is a newly added transaction
-                                        const isNewTransaction = newTransactions.some(t => t.id === row.original.id);
-
-                                        return (
-                                            <TableRow
-                                                key={row.id}
-                                                data-state={row.getIsSelected() && "selected"}
-                                                className={`${isNewTransaction ? "animate-in slide-in-from-top-2 duration-300" : ""}`}
-                                            >
-                                                {row.getVisibleCells().map((cell) => (
-                                                    <TableCell key={cell.id} className="transition-colors duration-200">
-                                                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                                    </TableCell>
-                                                ))}
-                                            </TableRow>
-                                        );
-                                    })}
-                                    {/* Add the load more trigger */}
+                                    {memoizedRows}
+                                    {/* Replace this busy loading indicator */}
                                     {hasNextPage && (
                                         <TableRow ref={ref}>
-                                            <TableCell colSpan={columns.length} className="h-24 text-center">
+                                            <TableCell colSpan={columns.length} className="h-12 text-center">
                                                 {isFetchingNextPage ? (
-                                                    <div className="flex justify-center items-center">
-                                                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-                                                        <span className="ml-2">Loading more...</span>
+                                                    <div className="h-8 flex justify-center items-center">
+                                                        <div className="animate-pulse text-xs text-muted-foreground">
+                                                            Loading more...
+                                                        </div>
                                                     </div>
-                                                ) : (
-                                                    <span>Scroll to load more</span>
-                                                )}
+                                                ) : null}
                                             </TableCell>
                                         </TableRow>
                                     )}
