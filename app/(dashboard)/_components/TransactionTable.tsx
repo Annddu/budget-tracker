@@ -1,5 +1,4 @@
 "use client";
-import { getTransactionsHistoryResponseType } from '@/app/api/transactions-history/route';
 import { DateToUTCDate } from '@/lib/helpers';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useMemo, useState, useRef, useCallback } from 'react'
@@ -28,7 +27,7 @@ import { Button } from '@/components/ui/button';
 import { TrashIcon } from '@radix-ui/react-icons';
 import DeleteTransactionDialog from './DeleteTransactionDialog';
 import UpdateTransactionDialog from './UpdateTransactionDialog';
-import { MoreHorizontal, Pencil, Trash } from 'lucide-react';
+import { MoreHorizontal, Pencil, Trash, RefreshCw } from 'lucide-react';
 import { DataTableFacetedFilter } from '@/components/datatable/FacetedFilters';
 import { DataTableViewOptions } from '@/components/datatable/ColumnToggle';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -36,6 +35,7 @@ import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { useInView } from 'react-intersection-observer';
 import { useDataRefresh } from '../_hooks/useDataRefresh';
+import { useNetwork } from '../_context/NetworkStatusProvider';
 import {
     DropdownMenu,
     DropdownMenuItem,
@@ -45,11 +45,19 @@ import {
     DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import { notifyManager } from '@tanstack/react-query';
+import { API_BASE_URL } from '@/lib/constants';
+import { useAuth } from '@clerk/nextjs';
+import { offlineStorage } from '@/lib/offlineStorage';
+import { syncService } from '@/lib/syncService';
 
 interface Props {
     from: Date;
     to: Date;
 }
+
+export type getTransactionsHistoryResponseType = Awaited<
+    ReturnType<typeof getTransactionsHistory>
+>;
 
 const emptyData: any[] = [];
 type TransactionHistoryRow = getTransactionsHistoryResponseType[0];
@@ -128,6 +136,7 @@ export const columns: ColumnDef<TransactionHistoryRow>[] = [
     {
         id: "actions",
         enableHiding: false,
+        header: () => <div className="text-right">Actions</div>, // Changed to right-aligned div
         cell: ({ row }) => <RowActions transaction={row.original} />,
     }
 ];
@@ -139,10 +148,12 @@ function TransactionTable({ from, to }: Props) {
     const queryClient = useQueryClient();
     const { ref, inView } = useInView();
     const { refreshAllData } = useDataRefresh();
+    const { userId } = useAuth();
+    const { isOnline } = useNetwork();
 
     const ITEMS_PER_PAGE = 25; // Set a larger page size for better performance
 
-    // Change to useInfiniteQuery for pagination support
+    // Modify the useInfiniteQuery call:
     const {
         data,
         fetchNextPage,
@@ -151,26 +162,103 @@ function TransactionTable({ from, to }: Props) {
         isFetching,
         refetch
     } = useInfiniteQuery({
-        queryKey: ["transactions", from, to],
-        queryFn: ({ pageParam = 1 }) =>
-            fetch(
-                `/api/transactions-history?from=${DateToUTCDate(from)}&to=${DateToUTCDate(to)}&page=${pageParam}`
-            ).then((res) => res.json()),
-        initialPageParam: 1, // Add this line - required in TanStack Query v5+
-        getNextPageParam: (lastPage) => {
-            // If your API doesn't provide hasNextPage directly, calculate it
-            // Total pages instead of hasNextPage flag
-            if (!lastPage.pagination) return undefined;
+        queryKey: ["transactions", from, to, userId],
+        queryFn: async ({ pageParam = 1 }) => {
+            if (!userId) return Promise.reject("No user ID available");
 
-            const { page, pages, total } = lastPage.pagination;
-            const hasMore = page < pages;
-
-            return hasMore ? page + 1 : undefined;
+            try {
+                // Try to fetch from server if online
+                if (isOnline) {
+                    const res = await fetch(`${API_BASE_URL}/api/transactions-history?userId=${userId}&page=${pageParam}&from=${DateToUTCDate(from)}&to=${DateToUTCDate(to)}`, {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer your-secure-api-key'
+                        }
+                    });
+                    
+                    const serverData = await res.json();
+                    
+                    // Cache for offline use
+                    if (pageParam === 1) {
+                        offlineStorage.cacheTransactions(serverData.data, userId);
+                    }
+                    
+                    return serverData;
+                } else {
+                    // Use cached transactions when offline
+                    const cachedTransactions = offlineStorage.getCachedTransactions(userId);
+                    
+                    // Use the standardized date filtering method
+                    const filteredTransactions = offlineStorage.filterTransactionsByDateRange(
+                        cachedTransactions,
+                        from,
+                        to
+                    );
+                    
+                    // Sort by date (newest first)
+                    filteredTransactions.sort((a, b) => 
+                        new Date(b.date).getTime() - new Date(a.date).getTime()
+                    );
+                    
+                    // Paginate results
+                    const pageSize = 25;
+                    const startIndex = (pageParam - 1) * pageSize;
+                    const pageData = filteredTransactions.slice(startIndex, startIndex + pageSize);
+                    
+                    return {
+                        data: pageData,
+                        pagination: {
+                            page: pageParam,
+                            pages: Math.ceil(filteredTransactions.length / pageSize),
+                            total: filteredTransactions.length
+                        }
+                    };
+                }
+            } catch (error) {
+                console.log("Error fetching transactions:", error);
+                
+                // Fallback to cache if fetch fails
+                const cachedTransactions = offlineStorage.getCachedTransactions(userId);
+                
+                // Apply same filtering and pagination as above
+                const fromDate = new Date(from);
+                const toDate = new Date(to);
+                
+                const filteredTransactions = cachedTransactions.filter(tx => {
+                    const txDate = new Date(tx.date);
+                    return txDate >= fromDate && txDate <= toDate;
+                });
+                
+                filteredTransactions.sort((a, b) => 
+                    new Date(b.date).getTime() - new Date(a.date).getTime()
+                );
+                
+                const pageSize = 25;
+                const startIndex = (pageParam - 1) * pageSize;
+                const pageData = filteredTransactions.slice(startIndex, startIndex + pageSize);
+                
+                return {
+                    data: pageData,
+                    pagination: {
+                        page: pageParam,
+                        pages: Math.ceil(filteredTransactions.length / pageSize),
+                        total: filteredTransactions.length
+                    }
+                };
+            }
         },
-        // Add these options to improve responsiveness
+        initialPageParam: 1,
+        getNextPageParam: (lastPage) => {
+            if (!lastPage.pagination) return undefined;
+            
+            const { page, pages } = lastPage.pagination;
+            return page < pages ? page + 1 : undefined;
+        },
         refetchOnWindowFocus: false,
-        staleTime: 1000 * 60 * 5, // 5 minutes
-        gcTime: 1000 * 60 * 10,   // 10 minutes cache time
+        staleTime: 1000 * 60 * 5,
+        gcTime: 1000 * 60 * 10,
+        enabled: !!userId,
     });
 
     // Function to manually trigger a refresh
@@ -226,14 +314,15 @@ function TransactionTable({ from, to }: Props) {
         setIsGenerating(true);
 
         try {
-            const response = await fetch('/api/transactions/generate', {
+            const response = await fetch(`${API_BASE_URL}/api/transactions/generate?userId=${userId}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': 'Bearer your-secure-api-key'
                 },
                 body: JSON.stringify({
                     count: 20,
-                    delayMs: 500
+                    delayMs: 500,
                 })
             });
 
@@ -368,65 +457,74 @@ function TransactionTable({ from, to }: Props) {
     };
 
     function updateTransactionTable(transaction: TransactionUpdateItem) {
-        // Format transaction for display
-        const formatter = new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
-        });
-
-        const newTransaction = {
-            id: `transaction-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        // Format the amount before adding to the table
+        const formattedTransaction = {
             ...transaction,
-            description: transaction.description || "Transaction",
-            categoryIcon: transaction.categoryIcon || "💰",
-            formattedAmount: transaction.type === 'expense'
-                ? `-${formatter.format(transaction.amount)}`
-                : formatter.format(transaction.amount)
+            formattedAmount: new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 2
+            }).format(transaction.amount)
         };
-
-        // Add to tracked list
-        setNewTransactions(prev => [...prev, newTransaction]);
-        newTransactions.push(newTransaction);
-
-        // Update the query cache
-        queryClient.setQueryData(["transactions", from, to], (oldData: any) => {
+        
+        // Update the transaction data in the cache
+        queryClient.setQueryData(["transactions", from, to, userId], (oldData: any) => {
             if (!oldData || !oldData.pages || !oldData.pages.length) {
-                // Handle case where the data structure isn't initialized yet
+                // If there's no existing data, create a new structure
                 return {
                     pages: [{
-                        data: [newTransaction],
+                        data: [formattedTransaction],
                         pagination: { page: 1, pages: 1, total: 1 }
-                    }],
-                    pageParams: [1]
+                    }]
                 };
             }
 
-            // Create updated first page
-            const firstPage = {
+            // Create updated first page with the new transaction at the top
+            const updatedFirstPage = {
                 ...oldData.pages[0],
-                data: [newTransaction, ...oldData.pages[0].data].sort((a, b) =>
-                    new Date(b.date).getTime() - new Date(a.date).getTime()
-                ),
+                data: [formattedTransaction, ...oldData.pages[0].data],
                 pagination: {
                     ...oldData.pages[0].pagination,
-                    total: (oldData.pages[0].pagination.total || 0) + 1
+                    total: (oldData.pages[0].pagination?.total || 0) + 1
                 }
             };
 
             return {
                 ...oldData,
-                pages: [firstPage, ...oldData.pages.slice(1)]
+                pages: [updatedFirstPage, ...oldData.pages.slice(1)]
             };
         });
 
-        // Force UI update for transactions
+        // Track as a new transaction for animation
+        setNewTransactions(prev => [...prev, formattedTransaction]);
+        
+        // Clear animation after delay
         setTimeout(() => {
+            setNewTransactions(prev => prev.filter(t => t.id !== transaction.id));
+        }, 2000);
+
+        // Check if we're offline before refreshing related stats
+        if (!isOnline) {
+            // When offline, only mark as stale without triggering refetches
             queryClient.invalidateQueries({
-                queryKey: ["transactions", from, to],
+                queryKey: ["transactions", from, to, userId],
                 exact: true,
                 refetchType: 'none'
             });
-        }, 0);
+        } else {
+            // Original refetch behavior for online mode
+            setTimeout(() => {
+                queryClient.invalidateQueries({
+                    queryKey: ["transactions", from, to, userId],
+                    exact: true,
+                    refetchType: 'none'
+                });
+            }, 0);
+            
+            // Update other stats/queries
+            updateBalanceStats(transaction);
+            updateCategoryStats(transaction);
+        }
     }
 
     function updateBalanceStats(transaction: TransactionUpdateItem) {
@@ -644,144 +742,351 @@ function TransactionTable({ from, to }: Props) {
         return () => window.removeEventListener('scroll', handleScroll);
     }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+    // Add this effect to listen for new transactions
+
+    useEffect(() => {
+        // Listen for new transactions added from other components
+        const handleNewTransaction = (event: any) => {
+            const { transaction } = event.detail;
+            if (transaction) {
+                // Use the same function we use in other parts of the app
+                updateTransactionTable(transaction);
+                
+                // Only update relevant stats when online
+                if (isOnline) {
+                    updateBalanceStats(transaction);
+                    updateCategoryStats(transaction);
+                    updateHistoryData(transaction);
+                }
+            }
+        };
+        
+        window.addEventListener('newTransaction', handleNewTransaction);
+        
+        return () => {
+            window.removeEventListener('newTransaction', handleNewTransaction);
+        };
+    }, [isOnline]);
+
+    // Add a new useEffect for handling transaction updates
+
+    useEffect(() => {
+        // Listen for transaction updates from other components
+        const handleUpdateTransaction = (event: any) => {
+            const { transaction } = event.detail;
+            if (transaction) {
+                // Update the transaction in the table
+                updateExistingTransaction(transaction);
+                
+                // Only update relevant stats when online
+                if (isOnline) {
+                    // These might need adjustment based on how your stats depend on transaction changes
+                    updateBalanceStats(transaction);
+                    updateCategoryStats(transaction);
+                    updateHistoryData(transaction);
+                }
+            }
+        };
+        
+        window.addEventListener('updateTransaction', handleUpdateTransaction);
+        
+        return () => {
+            window.removeEventListener('updateTransaction', handleUpdateTransaction);
+        };
+    }, [isOnline]);
+
+    // Add this new helper function for updating existing transactions
+    function updateExistingTransaction(transaction: TransactionUpdateItem) {
+        // Update the transaction data in the cache
+        queryClient.setQueryData(["transactions", from, to, userId], (oldData: any) => {
+            if (!oldData || !oldData.pages || !oldData.pages.length) {
+                return oldData;
+            }
+
+            // Update transaction in all pages
+            const updatedPages = oldData.pages.map((page: any) => {
+                const updatedData = page.data.map((t: any) => 
+                    t.id === transaction.id ? transaction : t
+                );
+                
+                return {
+                    ...page,
+                    data: updatedData
+                };
+            });
+
+            return {
+                ...oldData,
+                pages: updatedPages
+            };
+        });
+
+        // Check if we're offline before refreshing related stats
+        if (!isOnline) {
+            // When offline, only mark as stale without triggering refetches
+            queryClient.invalidateQueries({
+                queryKey: ["transactions", from, to, userId],
+                exact: true,
+                refetchType: 'none'
+            });
+        } else {
+            // Original refetch behavior for online mode
+            setTimeout(() => {
+                queryClient.invalidateQueries({
+                    queryKey: ["transactions", from, to, userId],
+                    exact: true,
+                    refetchType: 'none'
+                });
+            }, 0);
+        }
+    }
+
     // Add this memoized rows to improve performance
     const memoizedRows = useMemo(() => {
         return table.getRowModel().rows.map((row) => {
-            const isNewTransaction = newTransactions.some(t => t.id === row.original.id);
-
+            const isNewTransaction = newTransactions.some(t => t.id === row.original?.id);
+            const isPendingSync = row.original?._pendingAdd || row.original?._pendingUpdate;
+            
+            // Add null check before calling startsWith
+            const isTempTransaction = row.original?.id 
+                ? row.original.id.startsWith('temp-') 
+                : false;
+            
             return (
                 <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && "selected"}
-                    className={`${isNewTransaction ? "animate-in slide-in-from-top-2 duration-300" : ""}`}
+                    data-pending={isPendingSync ? "true" : "false"}
+                    data-temp={isTempTransaction ? "true" : "false"}
+                    className={`
+                        ${isNewTransaction ? "animate-in slide-in-from-top-2 duration-300" : ""} 
+                        ${isPendingSync ? "bg-yellow-50/30" : ""}
+                        ${isTempTransaction ? "bg-amber-50/20" : ""}
+                        ${isPendingSync || isTempTransaction ? "relative" : ""}
+                    `}
                 >
                     {row.getVisibleCells().map((cell) => (
                         <TableCell key={cell.id} className="transition-colors duration-200">
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </TableCell>
                     ))}
+                    {isPendingSync && (
+                        <style jsx>{`
+                            tr[data-pending="true"]::after {
+                                content: "";
+                                position: absolute;
+                                right: 4px;
+                                top: 4px;
+                                height: 8px;
+                                width: 8px;
+                                border-radius: 9999px;
+                                background-color: rgb(250 204 21);
+                                animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+                            }
+                            @keyframes pulse {
+                                0%, 100% {
+                                    opacity: 1;
+                                }
+                                50% {
+                                    opacity: 0.5;
+                                }
+                            }
+                        `}</style>
+                    )}
                 </TableRow>
             );
         });
     }, [table.getRowModel().rows, newTransactions]);
 
+    // Add a network status listener in TransactionTable
+    useEffect(() => {
+        const handleNetworkChange = (event: any) => {
+            if (event.detail.status === 'online') {
+                // When coming back online, check for pending transactions to sync
+                const pendingOperations = offlineStorage.getPendingOperations();
+                if (pendingOperations.length > 0) {
+                    toast.success(`Connected to internet. Syncing ${pendingOperations.length} pending changes...`);
+                    // Start sync process
+                    if (userId) {
+                        syncService.synchronize(userId);
+                    } else {
+                        syncService.synchronize();
+                    }
+                }
+                
+                // Force table refresh
+                queryClient.invalidateQueries({ queryKey: ["transactions"] });
+            }
+        };
+        
+        window.addEventListener('networkStatusChanged', handleNetworkChange);
+        return () => window.removeEventListener('networkStatusChanged', handleNetworkChange);
+    }, []);
+
+    // Add this with your other useEffect hooks
+    useEffect(() => {
+        // Listen for transaction deletions from other components
+        const handleDeleteTransaction = (event: any) => {
+            const { transactionId } = event.detail;
+            if (transactionId) {
+                // Update the transaction table by removing the deleted transaction
+                queryClient.setQueryData(["transactions", from, to, userId], (oldData: any) => {
+                    if (!oldData || !oldData.pages || !oldData.pages.length) {
+                        return oldData;
+                    }
+
+                    // Filter out the deleted transaction from all pages
+                    const updatedPages = oldData.pages.map((page: any) => ({
+                        ...page,
+                        data: page.data.filter((t: any) => t.id !== transactionId),
+                        pagination: {
+                            ...page.pagination,
+                            total: (page.pagination?.total || 0) - 1
+                        }
+                    }));
+
+                    return {
+                        ...oldData,
+                        pages: updatedPages
+                    };
+                });
+            }
+        };
+        
+        window.addEventListener('deleteTransaction', handleDeleteTransaction);
+        
+        return () => {
+            window.removeEventListener('deleteTransaction', handleDeleteTransaction);
+        };
+    }, [userId, from, to, queryClient]);
+
     return (
         <div className='w-full'>
-            <div className="flex justify-end mb-4">
-
-
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={generateStreamingTransactions}
-                    disabled={isGenerating}
-                    className="mr-2"
-                >
-                    {isGenerating ? (
-                        <>
-                            <div className="mr-2 h-4 w-4 animate-spin rounded-full border-b-2 border-current"></div>
-                            Generating...
-                        </>
-                    ) : (
-                        'Generate Real Transactions'
-                    )}
-                </Button>
-
-            </div>
-            <div className="flex flex-wrap items-end justify-between gap-2 py-4">
-                <div className="flex gap-2">
-                    {table.getColumn("category") && (
-                        <DataTableFacetedFilter
-                            title="Category"
-                            column={table.getColumn("category")}
-                            options={categoriesOptions}
-                        />
-                    )}
-                    {table.getColumn("type") && (
-                        <DataTableFacetedFilter
-                            title="Type"
-                            column={table.getColumn("type")}
-                            options={[
-                                { label: "Income", value: "income" },
-                                { label: "Expense", value: "expense" },
-                            ]}
-                        />
-                    )}
-                </div>
-                <div className='flex flex-wrap gap-2'>
-                    <DataTableViewOptions table={table} />
-                </div>
-            </div>
             <SkeletonWrapper isLoading={isFetching && !isFetchingNextPage}>
-                <div className="rounded-md border">
-                    <Table>
-                        <TableHeader>
-                            {table.getHeaderGroups().map((headerGroup) => (
-                                <TableRow key={headerGroup.id}>
-                                    {headerGroup.headers.map((header) => {
-                                        return (
-                                            <TableHead key={header.id}>
-                                                {header.isPlaceholder
-                                                    ? null
-                                                    : flexRender(
-                                                        header.column.columnDef.header,
-                                                        header.getContext()
-                                                    )}
-                                            </TableHead>
-                                        )
-                                    })}
-                                </TableRow>
-                            ))}
-                        </TableHeader>
-                        <TableBody>
-                            {table.getRowModel().rows?.length ? (
-                                <>
-                                    {memoizedRows}
-                                    {/* Replace this busy loading indicator */}
-                                    {hasNextPage && (
-                                        <TableRow ref={ref}>
-                                            <TableCell colSpan={columns.length} className="h-12 text-center">
-                                                {isFetchingNextPage ? (
-                                                    <div className="h-8 flex justify-center items-center">
-                                                        <div className="animate-pulse text-xs text-muted-foreground">
-                                                            Loading more...
-                                                        </div>
-                                                    </div>
-                                                ) : null}
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </>
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={columns.length} className="h-24 text-center">
-                                        No results.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
-                {/* Replace pagination controls with a status indicator */}
-                <div className="flex items-center justify-between space-x-2 py-4">
-                    <div className="flex-1 text-sm text-muted-foreground">
-                        Showing {transactions.length} of {
-                            // Use the actual length of transactions rather than relying on pagination metadata
-                            data?.pages.reduce((total, page) =>
-                                total + (Array.isArray(page.data) ? page.data.length : 0), 0) || 0
-                        } entries
+                
+                <div className="flex flex-wrap items-end justify-between gap-2 py-4">
+                    <div className="flex gap-2">
+                        
+                        {table.getColumn("category") && (
+                            <DataTableFacetedFilter
+                                title="Category"
+                                column={table.getColumn("category")}
+                                options={categoriesOptions}
+                            />
+                        )}
+                        {table.getColumn("type") && (
+                            <DataTableFacetedFilter
+                                title="Type"
+                                column={table.getColumn("type")}
+                                options={[
+                                    { label: "Income", value: "income" },
+                                    { label: "Expense", value: "expense" },
+                                ]}
+                            />
+                        )}
                     </div>
-                    {/* Optional button to manually load more */}
-                    {hasNextPage && (
-                        <Button
-                            variant="outline"
-                            onClick={() => fetchNextPage()}
-                            disabled={isFetchingNextPage}
-                        >
-                            {isFetchingNextPage ? "Loading more..." : "Load more"}
-                        </Button>
-                    )}
+                    <div className='flex flex-wrap gap-2'>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={generateStreamingTransactions}
+                        disabled={isGenerating || !isOnline}
+                        className="mr-2"
+                        title={!isOnline ? "This feature requires server connection" : ""}
+                    >
+                        {isGenerating ? (
+                            <>
+                                <div className="mr-2 h-4 w-4 animate-spin rounded-full border-b-2 border-current"></div>
+                                Generating...
+                            </>
+                        ) : !isOnline ? (
+                            'Server Offline: Generate Real Transactions'
+                        ) : (
+                            'Generate Real Transactions'
+                        )}
+                    </Button>
+                        <DataTableViewOptions table={table} />
+                    </div>
                 </div>
+                <SkeletonWrapper isLoading={isFetching && !isFetchingNextPage}>
+                    <div className="rounded-md border">
+                        <Table>
+                            <TableHeader>
+                                {table.getHeaderGroups().map((headerGroup) => (
+                                    <TableRow key={headerGroup.id}>
+                                        {headerGroup.headers.map((header) => {
+                                            return (
+                                                <TableHead key={header.id}>
+                                                    {header.isPlaceholder
+                                                        ? null
+                                                        : flexRender(
+                                                            header.column.columnDef.header,
+                                                            header.getContext()
+                                                        )}
+                                                </TableHead>
+                                            )
+                                        })}
+                                    </TableRow>
+                                ))}
+                            </TableHeader>
+                            <TableBody>
+                                {!data || !data.pages || data.pages.length === 0 || 
+                                (data.pages[0].data && data.pages[0].data.length === 0) ? (
+                                    <TableRow>
+                                        <TableCell colSpan={columns.length} className="text-center py-10 text-muted-foreground">
+                                            <p>No transactions found for this period.</p>
+                                            <Button 
+                                                variant="outline" 
+                                                onClick={() => refetch()} 
+                                                className="mt-4"
+                                            >
+                                                <RefreshCw className="mr-2 h-4 w-4" /> Refresh
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    <>
+                                        {memoizedRows}
+                                        {/* Replace this busy loading indicator */}
+                                        {hasNextPage && (
+                                            <TableRow ref={ref}>
+                                                <TableCell colSpan={columns.length} className="h-12 text-center">
+                                                    {isFetchingNextPage ? (
+                                                        <div className="h-8 flex justify-center items-center">
+                                                            <div className="animate-pulse text-xs text-muted-foreground">
+                                                                Loading more...
+                                                            </div>
+                                                        </div>
+                                                    ) : null}
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+                    {/* Replace pagination controls with a status indicator */}
+                    <div className="flex items-center justify-between space-x-2 py-4">
+                        <div className="flex-1 text-sm text-muted-foreground">
+                            Showing {transactions.length} of {
+                                // Use the actual length of transactions rather than relying on pagination metadata
+                                data?.pages.reduce((total, page) =>
+                                    total + (Array.isArray(page.data) ? page.data.length : 0), 0) || 0
+                            } entries
+                        </div>
+                        {/* Optional button to manually load more */}
+                        {hasNextPage && (
+                            <Button
+                                variant="outline"
+                                onClick={() => fetchNextPage()}
+                                disabled={isFetchingNextPage}
+                            >
+                                {isFetchingNextPage ? "Loading more..." : "Load more"}
+                            </Button>
+                        )}
+                    </div>
+                </SkeletonWrapper>
             </SkeletonWrapper>
         </div>
     )
@@ -798,29 +1103,32 @@ function RowActions({ transaction }: { transaction: TransactionHistoryRow }) {
             <DeleteTransactionDialog open={showDeleteDialog} setOpen={setShowDeleteDialog} transactionId={transaction.id} />
             <UpdateTransactionDialog open={showUpdateDialog} setOpen={setShowUpdateDialog} transaction={transaction} />
 
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button variant={"ghost"} className='h-8 w-8 p-0'>
-                        <span className='sr-only'>Open menu</span>
-                        <MoreHorizontal className='h-4 w-4' />
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align='end'>
-                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setShowUpdateDialog(true)}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                        onClick={() => setShowDeleteDialog(true)}
-                        className="text-red-600"
-                    >
-                        <Trash className="mr-2 h-4 w-4" />
-                        Delete
-                    </DropdownMenuItem>
-                </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Add flex container with justify-end to align content to the right */}
+            <div className="flex justify-end px-6">
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant={"ghost"} className='h-8 w-8 p-0'>
+                            <span className='sr-only'>Open menu</span>
+                            <MoreHorizontal className='h-4 w-4' />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align='end'>
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => setShowUpdateDialog(true)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            onClick={() => setShowDeleteDialog(true)}
+                            className="text-red-600"
+                        >
+                            <Trash className="mr-2 h-4 w-4" />
+                            Delete
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
         </>
     );
 }

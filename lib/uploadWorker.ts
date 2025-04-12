@@ -1,5 +1,8 @@
 // This will be our Web Worker file
 
+// Web workers don't have access to the application's imports
+// so we'll get these values passed from the main thread
+
 // Custom type for messages from the main thread
 type UploadMessage = {
   action: 'upload';
@@ -9,6 +12,8 @@ type UploadMessage = {
   category: string;
   description: string;
   chunkSize: number;
+  userId: string;      // Add this
+  apiBaseUrl: string;  // Add this
 } | {
   action: 'cancel';
 };
@@ -30,7 +35,9 @@ self.onmessage = async (event: MessageEvent<UploadMessage>) => {
         message.fileType,
         message.category,
         message.description,
-        message.chunkSize
+        message.chunkSize,
+        message.userId,           // Add this
+        message.apiBaseUrl        // Add this
       );
     } catch (error) {
       self.postMessage({ 
@@ -47,7 +54,9 @@ async function uploadFile(
   fileType: string,
   category: string,
   description: string,
-  chunkSize: number
+  chunkSize: number,
+  userId: string,     // Add this parameter
+  apiBaseUrl: string  // Add this parameter
 ) {
   const fileSize = fileBuffer.byteLength;
   const totalChunks = Math.ceil(fileSize / chunkSize);
@@ -103,9 +112,12 @@ async function uploadFile(
       
       while (retries < MAX_RETRIES && !success) {
         try {
-          const response = await fetch("/api/files/upload-chunk", {
+          const response = await fetch(`${apiBaseUrl}/api/files/upload-chunk?userId=${userId}`, {
             method: "POST",
-            body: formData
+            body: formData,
+            headers: {
+              'Authorization': 'Bearer your-secure-api-key'
+            }
           });
           
           if (!response.ok) {
@@ -157,20 +169,31 @@ async function uploadFile(
   // Verify file completion
   if (fileId) {
     try {
-      const response = await fetch(`/api/files/complete/${fileId}`);
-      const result = await response.json();
+      const response = await fetch(`${apiBaseUrl}/api/files/complete/${fileId}?userId=${userId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer your-secure-api-key'
+        }
+      });
       
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Server error: ${response.status}`);
+      }
+      
+      const result = await response.json();
       if (result.success) {
-        self.postMessage({ 
-          type: 'complete', 
-          fileId 
+        self.postMessage({
+          type: 'complete',
+          fileId
         });
       } else {
         throw new Error(result.error || "File completion failed");
       }
     } catch (error) {
-      self.postMessage({ 
-        type: 'completion-error', 
+      self.postMessage({
+        type: 'completion-error',
         error: error instanceof Error ? error.message : String(error)
       });
       throw error;

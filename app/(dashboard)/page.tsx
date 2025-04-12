@@ -1,20 +1,26 @@
-import { Button } from '@/components/ui/button';
 import { prisma } from '@/lib/prisma';
-import { currentUser } from '@clerk/nextjs/server'
+import { currentUser } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
-import React from 'react'
+import React, { Suspense } from 'react';
 import CreateTransactionDialog from './_components/CreateTransactionDialog';
-import TransactionTable from './_components/TransactionTable';
-import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { toast } from 'sonner';
-import { differenceInDays, startOfMonth } from 'date-fns';
+import { Button } from '@/components/ui/button';
 import DatePicker from './_components/DatePicker';
-import Overview from './_components/Overview';
-import History from './_components/History';
-import { DemoModeToggle } from "./_components/DemoModeToggle";
 import FilesPage from './files/page';
+import DashboardClient from './_components/DashboardClient';
+import History from './_components/History';
+import CategoriesManager from './_components/CategoriesManager';
 
-async function page() {
+// Loading spinner component
+const LoadingSpinner = () => {
+  return (
+    <div className="flex justify-center items-center p-8">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+    </div>
+  );
+};
+
+// This is now a Server Component (no "use client" directive)
+export default async function DashboardPage() {
   const user = await currentUser();
   if (!user) {
     redirect("/sign-in");
@@ -32,51 +38,50 @@ async function page() {
 
   return (
     <>
-      <div className='block h-full bg-background '>
+      <div className='block h-full bg-background'>
         <div className='border-b bg-card flex justify-between'>
-          <div className='flex flex-wrap items-center  py-8 px-8'>
+          <div className='flex flex-wrap items-center py-8 px-8'>
             <p className='text-3xl font-bold'>Hello, {user.firstName}! 👋</p>
           </div>
 
           <div className='flex items-center gap-3 px-8'>
-            <CreateTransactionDialog trigger={
-              <Button className='border-emerald-500 border-1 bg-emerald-950 text-white hover:bg-emerald-700 hover:text-white '>
-                Add income
-              </Button>
-            }
-              type='income'
+            <CreateTransactionDialog
+              label="Add income"
+              type="income"
+              buttonClassName="border-emerald-500 border-1 bg-emerald-950 text-white hover:bg-emerald-700 hover:text-white"
             />
-            <CreateTransactionDialog trigger={
-              <Button className='border-rose-500 border-1 bg-rose-950 text-white hover:bg-rose-700 hover:text-white '>
-                Add expense
-              </Button>
-            }
-              type='expense'
+            <CreateTransactionDialog
+              label="Add expense"
+              type="expense"
+              buttonClassName="border-rose-500 border-1 bg-rose-950 text-white hover:bg-rose-700 hover:text-white"
             />
           </div>
         </div>
 
-        <FilesPage/>
+        <FilesPage />
 
-        <Overview userSettings={userSettings} />
-        <History userSettings={userSettings} />
+        {/* Pass the userSettings to the client component */}
+        <DashboardClient userSettings={userSettings} />
 
-        <div className='border-b flex flex-wrap  justify-between gap-6 py-8 px-8'> 
-          <div>
-            <p className='text-3xl font-bold'>Transactions</p>
+        <Suspense fallback={<LoadingSpinner />}>
+          <History userSettings={userSettings} />
+        </Suspense>
+
+        {/* Categories Manager Section */}
+        <div className='py-8 px-8'>
+          <h2 className='text-3xl font-bold mb-6'>Categories</h2>
+          <div className="w-full">
+            <Suspense fallback={<LoadingSpinner />}>
+              <CategoriesManager />
+            </Suspense>
           </div>
+        </div>
+
+        <div className='border-b flex flex-wrap justify-between gap-6 px-8'>
+          <p className='text-3xl font-bold'>Transactions</p>
           <DatePicker />
         </div>
-
-        {/* <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <DemoModeToggle />
-        </div> */}
-
       </div>
-
     </>
-  )
+  );
 }
-
-export default page

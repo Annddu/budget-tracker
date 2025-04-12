@@ -1,5 +1,4 @@
 "use client";
-import { GetBalanceStatsResponseType } from '@/app/api/stats/balance/route';
 import SkeletonWrapper from '@/components/SkeletonWrapper';
 import { Card } from '@/components/ui/card';
 import { DateToUTCDate, GetFormatterForCurrency } from '@/lib/helpers';
@@ -8,6 +7,13 @@ import { useQuery } from '@tanstack/react-query';
 import { TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import React, { ReactNode, useCallback, useMemo } from 'react'
 import CountUp from "react-countup";
+import { useAuth } from '@clerk/nextjs';
+import { API_BASE_URL } from '@/lib/constants';
+
+interface GetBalanceStatsResponseType {
+    income: number;
+    expense: number;
+}
 
 interface Props {
     from: Date;
@@ -16,12 +22,33 @@ interface Props {
 }
 
 function StatsCards({ from, to, userSettings }: Props) {
+    const { userId } = useAuth();
+
     const statsQuery = useQuery<GetBalanceStatsResponseType>({
-        queryKey: ["overview", "stats", from, to],
-        queryFn: () =>
-            fetch(
-                `/api/stats/balance?from=${DateToUTCDate(from)}&to=${DateToUTCDate(to)}`
-            ).then((res) => res.json()),
+        queryKey: ["overview", "stats", from, to, userId],
+        queryFn: async () => {
+            if (!userId) return Promise.reject("No user ID available");
+
+            console.log("Fetching balance stats for userId:", userId);
+
+            try {
+                const res = await fetch(
+                    `${API_BASE_URL}/api/stats/balance?userId=${userId}&from=${DateToUTCDate(from)}&to=${DateToUTCDate(to)}`,
+                    {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer your-secure-api-key'
+                        }
+                    }
+                )
+                return res.json();
+            } catch (error) {
+                console.log("Error fetching balance stats:", error);
+                return [];
+            }
+        },
+        enabled: !!userId,
     });
 
     const formatter = useMemo(() => {
@@ -35,7 +62,7 @@ function StatsCards({ from, to, userSettings }: Props) {
 
     return (
         <div className='relative flex w-full flex-wrap gap-2 md:flex-nowrap'>
-            
+
             <SkeletonWrapper isLoading={statsQuery.isFetching}>
                 <StatCard
                     formatter={formatter}
@@ -98,8 +125,6 @@ function StatCard({
         [formatter]
     );
 
-    // Add key prop to force re-render when value changes
-    // This ensures proper animation
     return (
         <Card className="flex w-full items-center gap-2 p-4 transition-all duration-300 ease-in-out hover:shadow-md">
             <div className="transition-all duration-300 ease-in-out">
@@ -108,9 +133,9 @@ function StatCard({
             <div className='flex flex-col items-start gap-0'>
                 <p className='text-muted-foreground transition-colors duration-200'>{title}</p>
                 <CountUp
-                    key={`${title}-${value}-${Date.now()}`} // Add timestamp to force rerender
-                    start={value * 0.7}  // Start from 70% of the final value 
-                    preserveValue={false} 
+                    key={`${title}-${value}-${Date.now()}`}
+                    start={value * 0.7}
+                    preserveValue={false}
                     end={value}
                     decimals={2}
                     formattingFn={formatFn}

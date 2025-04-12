@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { CreateCategorySchema, CreateCategorySchemaType } from '@/schema/categories';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { DialogTitle } from '@radix-ui/react-dialog';
-import { CircleOff, Loader2, PlusSquare } from 'lucide-react';
+import { CircleOff, Loader2, PlusSquare, Plus } from 'lucide-react';
 import React, { useCallback } from 'react'
 import { useForm } from 'react-hook-form';
 import Picker from '@emoji-mart/react';
@@ -19,6 +19,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Category } from '@prisma/client';
 import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
+import { API_BASE_URL } from '@/lib/constants';
+import { useAuth } from '@clerk/nextjs';
 
 interface Props {
     type: TransactionType;
@@ -37,42 +39,40 @@ function CreateCategoryDialog({ type }: Props) {
 
     const queryClient = useQueryClient();
     const theme = useTheme();
+    const { userId } = useAuth();
 
-    const {mutate, isPending} = useMutation({
+    const { mutate, isPending } = useMutation({
         mutationFn: async (values: CreateCategorySchemaType) => {
-            // For Clerk authenticated version:
-            const response = await fetch('/api/categories', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(values)
-            });
-            
-            // For API key version (in your separated frontend):
-            // const response = await fetch(`http://localhost:3000/api/categories?userId=${userId}`, {
-            //   method: 'POST',
-            //   headers: {
-            //     'Content-Type': 'application/json',
-            //     'Authorization': `Bearer your-secure-api-key`
-            //   },
-            //   body: JSON.stringify(values)
-            // });
-            
-            if (!response.ok) {
-              const error = await response.json();
-              throw new Error(error.message || 'Failed to create category');
+            if (!userId) {
+                throw new Error("User ID not available");
+            }
+
+            console.log("Creating category for userId:", userId);
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/categories?userId=${userId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer your-secure-api-key'
+                    },
+                    body: JSON.stringify(values)
+                });
+                return response.json();
+            }
+            catch (error) {
+                console.log("Error creating category:", error);
+                return [];
             }
             
-            return response.json();
-          },
+        },
         onSuccess: async (data: Category) => {
             form.reset({
                 name: "",
                 icon: "",
                 type,
             });
-            
+
             toast.success(`Category ${data.name} created!`, {
                 id: "create-category",
             });
@@ -83,8 +83,9 @@ function CreateCategoryDialog({ type }: Props) {
 
             setOpen((prev) => !prev);
         },
-        onError: () => {
-            toast.error("Something went wrong", {
+        onError: (error) => {
+            console.error("Error creating category:", error);
+            toast.error("Failed to create category", {
                 id: "create-category",
             });
         },
@@ -104,11 +105,12 @@ function CreateCategoryDialog({ type }: Props) {
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
                 <Button
-                    variant={"ghost"}
-                    className='flex border-separate items-center justify-start rounded-none border-b px-3 py-3 text-muted-foreground'
+                    variant="outline"
+                    size="sm"
+                    className="flex items-center gap-2 mb-2 bg-card hover:bg-muted"
                 >
-                    <PlusSquare className='mr-2 h-4 w-4' />
-                    Create new
+                    <Plus className="h-4 w-4" />
+                    Create Category
                 </Button>
             </DialogTrigger>
             <DialogContent>
@@ -128,7 +130,7 @@ function CreateCategoryDialog({ type }: Props) {
                     </DialogDescription>
                 </DialogHeader>
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} 
+                    <form onSubmit={form.handleSubmit(onSubmit)}
                         className='space-y-8'>
                         <FormField
                             control={form.control}
@@ -212,10 +214,10 @@ function CreateCategoryDialog({ type }: Props) {
                             Cancel
                         </Button>
                     </DialogClose>
-                    <Button 
-                    type='button'
-                    onClick={form.handleSubmit(onSubmit)} 
-                    disabled={isPending}>
+                    <Button
+                        type='button'
+                        onClick={form.handleSubmit(onSubmit)}
+                        disabled={isPending}>
                         {!isPending && "Create"}
                         {isPending && <Loader2 className='animate-spin' />}
                     </Button>

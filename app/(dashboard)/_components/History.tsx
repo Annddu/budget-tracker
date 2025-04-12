@@ -21,6 +21,8 @@ import {
 import CountUp from 'react-countup';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { API_BASE_URL } from '@/lib/constants';
+import { useAuth } from '@clerk/nextjs';
 
 function History({ userSettings }: { userSettings: UserSettings }) {
     const [timeframe, setTimeframe] = useState<Timeframe>("month");
@@ -34,6 +36,7 @@ function History({ userSettings }: { userSettings: UserSettings }) {
     }, [userSettings.currency]);
 
     const queryClient = useQueryClient();
+    const { userId } = useAuth();
 
     // Function to generate random data based on the current timeframe
     const generateRandomData = () => {
@@ -82,7 +85,7 @@ function History({ userSettings }: { userSettings: UserSettings }) {
     useEffect(() => {
         // Store current state for other components to know what's displayed
         sessionStorage.setItem('historyState', JSON.stringify({ timeframe, period }));
-        
+
         return () => {
             // Cleanup on unmount
             sessionStorage.removeItem('historyState');
@@ -90,11 +93,25 @@ function History({ userSettings }: { userSettings: UserSettings }) {
     }, [timeframe, period]);
 
     const historyDataQuery = useQuery({
-        queryKey: ["overview", "history", timeframe, period],
-        queryFn: () =>
-            fetch(
-                `/api/history-data?timeframe=${timeframe}&year=${period.year}&month=${period.month}`
-            ).then((res) => res.json()),
+        queryKey: ["overview", "history", timeframe, period, userId],
+        queryFn: async () => {
+            if (!userId) return Promise.reject("No user ID available");
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/history-data?userId=${userId}&timeframe=${timeframe}&year=${period.year}&month=${period.month}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer your-secure-api-key'
+                    }
+                })
+                return res.json();
+            }
+            catch (error) {
+                console.log("Error fetching history data:", error);
+                return [];
+            }
+        },
+        enabled: !!userId,
     });
 
     const dataAvailable =
@@ -128,7 +145,7 @@ function History({ userSettings }: { userSettings: UserSettings }) {
                                 <div className='h-4 w-4 rounded-full bg-red-500'></div>
                                 Expense
                             </Badge>
-                            
+
                             {/* <div className="flex gap-2 ml-2">
                                 <Button 
                                     variant="outline" 

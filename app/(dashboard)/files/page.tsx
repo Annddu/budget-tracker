@@ -4,7 +4,7 @@ import FilesList from "../_components/FilesList";
 
 export default function FilesPage() {
   return (
-    <div className="container mx-auto py-8">
+    <div className="px-8 py-8 w-full ">
       <h1 className="text-3xl font-bold mb-8">File Management</h1>
       
       <Tabs defaultValue="files" className="w-full">
@@ -13,11 +13,11 @@ export default function FilesPage() {
           <TabsTrigger value="upload">Upload File</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="files">
+        <TabsContent value="files" className="w-full">
           <FilesList />
         </TabsContent>
         
-        <TabsContent value="upload">
+        <TabsContent value="upload" className="w-full">
           <FileUpload />
         </TabsContent>
       </Tabs>

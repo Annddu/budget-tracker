@@ -35,6 +35,8 @@ export interface DateRangePickerProps {
   locale?: string
   /** Option for showing compare feature */
   showCompare?: boolean
+  /** Disable the date range picker */
+  disabled?: boolean
 }
 
 const formatDate = (date: Date, locale: string = 'en-us'): string => {
@@ -93,7 +95,8 @@ export const DateRangePicker: FC<DateRangePickerProps> & {
   onUpdate,
   align = 'end',
   locale = 'en-US',
-  showCompare = true
+  showCompare = true,
+  disabled = false
 }): JSX.Element => {
   const [isOpen, setIsOpen] = useState(false)
 
@@ -331,6 +334,7 @@ export const DateRangePicker: FC<DateRangePickerProps> & {
       modal={true}
       open={isOpen}
       onOpenChange={(open: boolean) => {
+        if (disabled) return; // Don't open if disabled
         if (!open) {
           resetValues()
         }
@@ -338,7 +342,7 @@ export const DateRangePicker: FC<DateRangePickerProps> & {
       }}
     >
       <PopoverTrigger asChild>
-        <Button size={'lg'} variant="outline">
+        <Button size={'lg'} variant="outline" disabled={disabled}>
           <div className="text-right">
             <div className="py-1">
               <div>{`${formatDate(range.from, locale)}${

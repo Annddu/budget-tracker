@@ -6,34 +6,40 @@ import { PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { TransactionType } from "@/lib/types";
 import { Category } from "@prisma/client";
 import { Popover, PopoverTrigger } from "@radix-ui/react-popover";
-import { useQuery } from "@tanstack/react-query";
 import React, { useEffect } from "react";
 import CreateCategoryDialog from "./CreateCategoryDialog";
 import { CommandGroup } from "cmdk";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, CloudOff, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCategories } from "../_hooks/useCategories";
+import { useNetwork } from "../_context/NetworkStatusProvider";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "react-hot-toast";
 
 interface Props {
     type: TransactionType;
     onChange: (value: string) => void;
-    value?: string; // Add this prop    
+    defaultValue?: string;
 }
 
-function CategoryPicker({ type, onChange}: Props) {
+function CategoryPicker({ type, onChange, defaultValue }: Props) {
     const [open, setOpen] = React.useState(false);
-    const [value, setValue] = React.useState("");
-
+    const [value, setValue] = React.useState(defaultValue || "");
+    const { isOnline } = useNetwork();
+    
+    // Use the custom hook for categories
+    const categoriesQuery = useCategories(type);
 
     useEffect(() => {
-        if(!value) return;
+        if (!value) return;
         onChange(value);
     }, [value, onChange]);
-    
-    const categoriesQuery = useQuery({
-        queryKey: ["categories", type],
-        queryFn: () =>
-            fetch(`/api/categories?type=${type}`).then((res) => res.json()),
-    });
+
+    useEffect(() => {
+        if (defaultValue) {
+            setValue(defaultValue);
+        }
+    }, [defaultValue]);
 
     const selectedCategory = categoriesQuery.data?.find(
         (category: Category) => category.name === value
@@ -51,44 +57,71 @@ function CategoryPicker({ type, onChange}: Props) {
                     <CategoryRow category={selectedCategory} />
                 ) : (
                     "Select a category"
-
                 )}
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50"/>
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
             </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[200px] p-0">
-                <Command onSubmit={e => {
-                    e.preventDefault();
-                }}>
-                    <CommandInput placeholder="Search category..."/>
-                    <CreateCategoryDialog type={type} />
-                    <CommandEmpty>
-                        <p>Category not found</p>
+            <Command onSubmit={e => {
+                e.preventDefault();
+            }}>
+                <CommandInput placeholder="Search category..." />
+                {!isOnline && (
+                    <div className="flex items-center p-2 text-xs text-yellow-700 bg-yellow-50">
+                        <CloudOff className="h-3 w-3 mr-1" />
+                        <span>Using cached categories</span>
+                    </div>
+                )}
+                {isOnline && (
+                    <>
+                        <CreateCategoryDialog type={type} />
+                        <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-xs" 
+                            onClick={() => {
+                                const queryClient = useQueryClient();
+                                queryClient.invalidateQueries({ queryKey: ["categories"] });
+                                toast.success("Categories refreshed");
+                            }}
+                        >
+                            <RefreshCw className="h-3 w-3 mr-1" />
+                            Refresh
+                        </Button>
+                    </>
+                )}
+                <CommandEmpty>
+                    <p>Category not found</p>
+                    {isOnline ? (
                         <p className="text-xs text-muted-foreground">
                             Tip: Create a new category
                         </p>
-                    </CommandEmpty>
-                    <CommandGroup>
-                        <CommandList>
-                            {
-                                categoriesQuery.data && categoriesQuery.data.map((category: Category) => (
-                                    <CommandItem key={category.name} onSelect={() => {
-                                        setValue(category.name);
-                                        setOpen((prev) => !prev);
-                                    }}
-                                    >
-                                        <CategoryRow category={category} />
-                                        <Check className={cn(
-                                            "mr-2 w-4 h-4 opacity-0",
-                                            value === category.name && "opacity-100"
-                                            
-                                        )}/>
-                                    </CommandItem>
-                                ))
-                            }
-                        </CommandList>
-                    </CommandGroup>
-                </Command>
+                    ) : (
+                        <p className="text-xs text-yellow-700">
+                            Can't create categories offline
+                        </p>
+                    )}
+                </CommandEmpty>
+                <CommandGroup>
+                    <CommandList>
+                        {
+                            categoriesQuery.data && categoriesQuery.data.map((category: Category) => (
+                                <CommandItem key={category.name} onSelect={() => {
+                                    setValue(category.name);
+                                    setOpen((prev) => !prev);
+                                }}
+                                >
+                                    <CategoryRow category={category} />
+                                    <Check className={cn(
+                                        "mr-2 w-4 h-4 opacity-0",
+                                        value === category.name && "opacity-100"
+                                    )} />
+                                </CommandItem>
+                            ))
+                        }
+                    </CommandList>
+                </CommandGroup>
+            </Command>
         </PopoverContent>
     </Popover>
 }

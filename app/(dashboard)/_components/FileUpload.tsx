@@ -9,6 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useFileUpload } from "../_context/FileUploadContext";
+import { useNetwork } from '../_context/NetworkStatusProvider';
+import { CloudOff } from 'lucide-react';
 
 export default function FileUpload() {
   const { 
@@ -20,6 +22,7 @@ export default function FileUpload() {
     cancelUpload 
   } = useFileUpload();
   
+  const { isOnline } = useNetwork();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -51,9 +54,15 @@ export default function FileUpload() {
   };
 
   return (
-    <Card className="w-full max-w-2xl mx-auto">
+    <Card className="w-full">
       <CardHeader>
         <CardTitle>Upload File</CardTitle>
+        {!isOnline && (
+          <div className="flex items-center mt-2 p-2 bg-yellow-50 rounded text-yellow-700 text-sm">
+            <CloudOff className="h-4 w-4 mr-2" />
+            <span>File uploads are disabled while offline</span>
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
@@ -63,7 +72,7 @@ export default function FileUpload() {
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
-            disabled={uploadState.isUploading}
+            disabled={uploadState.isUploading || !isOnline}
           />
         </div>
         
@@ -132,9 +141,10 @@ export default function FileUpload() {
         ) : (
           <Button 
             onClick={startUpload} 
-            disabled={!uploadState.file || uploadState.isUploading}
+            disabled={!uploadState.file || uploadState.isUploading || !isOnline}
+            title={!isOnline ? "Cannot upload files while offline" : ""}
           >
-            {uploadState.isUploading ? `Uploading ${uploadState.progress}%` : 'Upload'}
+            {!isOnline ? 'Server Offline' : 'Upload'}
           </Button>
         )}
       </CardFooter>

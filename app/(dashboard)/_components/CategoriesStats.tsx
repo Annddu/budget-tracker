@@ -1,6 +1,5 @@
 "use client";
 import { DateToUTCDate, GetFormatterForCurrency } from '@/lib/helpers';
-import { GetCategoriesStatsResponseType } from '@/app/api/stats/categories/route';
 import SkeletonWrapper from '@/components/SkeletonWrapper';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { TransactionType } from '@/lib/types';
@@ -9,6 +8,17 @@ import { useQuery } from '@tanstack/react-query';
 import React, { useMemo } from 'react';
 import { ScrollArea } from '@radix-ui/react-scroll-area';
 import { Progress } from '@/components/ui/progress';
+import { useAuth } from '@clerk/nextjs';
+import { API_BASE_URL } from '@/lib/constants';
+
+interface GetCategoriesStatsResponseType extends Array<{
+    category: string;
+    categoryIcon: string;
+    type: TransactionType;
+    _sum: {
+        amount: number | null;
+    };
+}> {}
 
 interface Props {
     userSettings: UserSettings;
@@ -17,12 +27,38 @@ interface Props {
 }
 
 function CategoriesStats({ userSettings, from, to }: Props) {
+    const { userId } = useAuth();
+    
     const statsQuery = useQuery<GetCategoriesStatsResponseType>({
-        queryKey: ["overview", "stats", "categories", from, to],
-        queryFn: () =>
-            fetch(
-                `/api/stats/categories?from=${DateToUTCDate(from)}&to=${DateToUTCDate(to)}`
-            ).then((res) => res.json())
+        queryKey: ["overview", "stats", "categories", from, to, userId],
+        queryFn: async () => {
+            if (!userId) return [];
+        
+            try {
+                const res = await fetch(
+                    `${API_BASE_URL}/api/stats/categories?userId=${userId}&from=${DateToUTCDate(from)}&to=${DateToUTCDate(to)}`,
+                    {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer your-secure-api-key',
+                        },
+                    }
+                );
+        
+                if (!res.ok) {
+                    //console.error('Failed to fetch category stats');
+                    return [];
+                }
+        
+                return res.json();
+            } catch (error) {
+                //console.error("Error fetching category stats:", error);
+                return [];
+            }
+        },
+        
+        enabled: !!userId,
     });
 
     const formatter = useMemo(() => {
