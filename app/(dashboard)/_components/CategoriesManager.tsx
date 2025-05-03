@@ -12,6 +12,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { Button } from '@/components/ui/button';
 import { Pencil, Trash2, Plus } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -49,8 +58,83 @@ import { cn } from '@/lib/utils';
 // Define the Category type that includes the id property
 type Category = PrismaCategory & { id: string };
 
+// Add this to your CategoriesManager.tsx file
+function GenerateCategoriesButton({ type }: { type: TransactionType }) {
+  const { userId } = useAuth();
+  const { isOnline } = useNetwork();
+  const queryClient = useQueryClient();
+  const [isGenerating, setIsGenerating] = useState(false);
+  
+  const handleGenerateCategories = async () => {
+    if (!userId || !isOnline) return;
+    
+    setIsGenerating(true);
+    const toastId = "generate-categories";
+    toast.loading("Generating 100,000 categories...", {
+      id: toastId,
+    });
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/categories/generate?userId=${userId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer your-secure-api-key'
+        },
+        body: JSON.stringify({
+          count: 100000,
+          type
+        })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error: ${response.status} - ${errorText}`);
+      }
+      
+      const result = await response.json();
+      
+      toast.success(`Generated ${result.total} categories!`, {
+        id: toastId
+      });
+      
+      // Refresh categories data
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      
+    } catch (error) {
+      console.error("Error generating categories:", error);
+      toast.error(`Failed: ${error instanceof Error ? error.message : String(error)}`, {
+        id: toastId
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+  
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleGenerateCategories}
+      disabled={isGenerating || !isOnline}
+    >
+      {isGenerating ? (
+        <>
+          <div className="mr-2 h-4 w-4 animate-spin rounded-full border-b-2 border-current"></div>
+          Generating...
+        </>
+      ) : (
+        'Generate 100K Categories'
+      )}
+    </Button>
+  );
+}
+
 export default function CategoriesManager() {
   const [activeTab, setActiveTab] = useState<TransactionType>("expense");
+  const [page, setPage] = useState(1);
+  const pageSize = 10; // Number of items per page
+  
   const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
   const [categoryToEdit, setCategoryToEdit] = useState<Category | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -60,8 +144,19 @@ export default function CategoriesManager() {
   const queryClient = useQueryClient();
   const { isOnline } = useNetwork();
   
-  // Use the existing hook to get categories
-  const categoriesQuery = useCategories(activeTab);
+  // Updated hook call with pagination
+  const categoriesQuery = useCategories(activeTab, page, pageSize);
+  
+  // Get categories and pagination data
+  const categories = categoriesQuery.data?.data || [];
+  const pagination = categoriesQuery.data?.pagination || { 
+    total: 0, pages: 1, page: 1, pageSize
+  };
+
+  // Function to handle page changes
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+  };
 
   // Delete category mutation
   const deleteMutation = useMutation({
@@ -177,19 +272,25 @@ export default function CategoriesManager() {
       )}
       
       <div className="w-full">
-        <Tabs defaultValue="expense" onValueChange={(value) => setActiveTab(value as TransactionType)}>
+        <Tabs defaultValue="expense" onValueChange={(value) => {
+          setActiveTab(value as TransactionType);
+          setPage(1); // Reset to first page when changing tabs
+        }}>
           <TabsList className="mb-4">
             <TabsTrigger value="expense">Expenses</TabsTrigger>
             <TabsTrigger value="income">Income</TabsTrigger>
           </TabsList>
           
           <TabsContent value="expense">
-            <div className="mb-4">
+            <div className="flex justify-between mb-4">
               <CreateCategoryDialog type="expense" />
+              <GenerateCategoriesButton type="expense" />
             </div>
             <CategoriesTable 
-              categories={categoriesQuery.data || []} 
+              categories={categories}
               isLoading={categoriesQuery.isLoading}
+              pagination={pagination}
+              onPageChange={handlePageChange}
               onEdit={handleEditCategory}
               onDelete={(category) => {
                 setCategoryToDelete(category);
@@ -200,12 +301,15 @@ export default function CategoriesManager() {
           </TabsContent>
           
           <TabsContent value="income">
-            <div className="mb-4">
+            <div className="flex justify-between mb-4">
               <CreateCategoryDialog type="income" />
+              <GenerateCategoriesButton type="income" />  {/* Add this */}
             </div>
             <CategoriesTable 
-              categories={categoriesQuery.data || []} 
+              categories={categories}  
               isLoading={categoriesQuery.isLoading}
+              pagination={pagination}
+              onPageChange={handlePageChange}
               onEdit={handleEditCategory}
               onDelete={(category) => {
                 setCategoryToDelete(category);
@@ -220,15 +324,31 @@ export default function CategoriesManager() {
   );
 }
 
+// Update CategoriesTable props interface
 interface CategoriesTableProps {
   categories: Category[];
   isLoading: boolean;
+  pagination: {
+    total: number;
+    pages: number;
+    page: number;
+    pageSize: number;
+  };
+  onPageChange: (page: number) => void;
   onEdit: (category: Category) => void;
   onDelete: (category: Category) => void;
   isOnline: boolean;
 }
 
-function CategoriesTable({ categories, isLoading, onEdit, onDelete, isOnline }: CategoriesTableProps) {
+function CategoriesTable({ 
+  categories, 
+  isLoading, 
+  pagination, 
+  onPageChange, 
+  onEdit, 
+  onDelete, 
+  isOnline 
+}: CategoriesTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   
   const columns: ColumnDef<Category>[] = [
@@ -312,6 +432,119 @@ function CategoriesTable({ categories, isLoading, onEdit, onDelete, isOnline }: 
             )}
           </TableBody>
         </Table>
+      </div>
+      
+      {/* Add pagination controls */}
+      <div className="flex items-center justify-between space-x-2 py-4">
+        <div className=" text-sm text-muted-foreground">
+          Showing {categories.length} of {pagination.total} categories
+        </div>
+        <Pagination>
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious 
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onPageChange(Math.max(1, pagination.page - 1));
+                }}
+                aria-disabled={pagination.page <= 1}
+              />
+            </PaginationItem>
+            
+            {/* First page */}
+            {pagination.page > 2 && (
+              <PaginationItem>
+                <PaginationLink 
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onPageChange(1);
+                  }}
+                >
+                  1
+                </PaginationLink>
+              </PaginationItem>
+            )}
+            
+            {/* Ellipsis */}
+            {pagination.page > 3 && (
+              <PaginationItem>
+                <PaginationEllipsis />
+              </PaginationItem>
+            )}
+            
+            {/* Previous page */}
+            {pagination.page > 1 && (
+              <PaginationItem>
+                <PaginationLink 
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onPageChange(pagination.page - 1);
+                  }}
+                >
+                  {pagination.page - 1}
+                </PaginationLink>
+              </PaginationItem>
+            )}
+            
+            {/* Current page */}
+            <PaginationItem>
+              <PaginationLink isActive href="#">
+                {pagination.page}
+              </PaginationLink>
+            </PaginationItem>
+            
+            {/* Next page */}
+            {pagination.page < pagination.pages && (
+              <PaginationItem>
+                <PaginationLink 
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onPageChange(pagination.page + 1);
+                  }}
+                >
+                  {pagination.page + 1}
+                </PaginationLink>
+              </PaginationItem>
+            )}
+            
+            {/* Ellipsis */}
+            {pagination.page < pagination.pages - 2 && (
+              <PaginationItem>
+                <PaginationEllipsis />
+              </PaginationItem>
+            )}
+            
+            {/* Last page */}
+            {pagination.page < pagination.pages - 1 && (
+              <PaginationItem>
+                <PaginationLink 
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onPageChange(pagination.pages);
+                  }}
+                >
+                  {pagination.pages}
+                </PaginationLink>
+              </PaginationItem>
+            )}
+            
+            <PaginationItem>
+              <PaginationNext 
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onPageChange(Math.min(pagination.pages, pagination.page + 1));
+                }}
+                aria-disabled={pagination.page >= pagination.pages}
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
       </div>
     </div>
   );

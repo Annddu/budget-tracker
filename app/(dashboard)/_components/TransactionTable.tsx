@@ -321,8 +321,8 @@ function TransactionTable({ from, to }: Props) {
                     'Authorization': 'Bearer your-secure-api-key'
                 },
                 body: JSON.stringify({
-                    count: 20,
-                    delayMs: 500,
+                    count: 100000,
+                    delayMs: 10,
                 })
             });
 
@@ -437,7 +437,7 @@ function TransactionTable({ from, to }: Props) {
 
                 toast.success("All statistics updated", {
                     id: "stats-update",
-                    duration: 2000
+                    duration: Infinity
                 });
             }, 500); // Increased timeout for better reliability
         }
