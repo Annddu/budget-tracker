@@ -10,8 +10,6 @@ export async function UpdateUserCurrency(currency: string) {
         currency,
     });
 
-    // throw new Error("test");
-
     if (!parsedBody.success) {
         throw parsedBody.error;
     }
@@ -21,12 +19,16 @@ export async function UpdateUserCurrency(currency: string) {
         redirect("/sign-in");
     }
 
-    const userSettings = await prisma.userSettings.update({
+    // Use upsert instead of update to handle both new and existing users
+    const userSettings = await prisma.userSettings.upsert({
         where: {
             userId: user.id,
-
         },
-        data: {
+        update: {
+            currency,
+        },
+        create: {
+            userId: user.id,
             currency,
         },
     });
